@@ -22,7 +22,7 @@ import {
   showRecording,
 } from "./recording.js";
 import { validateMP3, runCommand } from "./renderer.js";
-import { GuildscribeError, sanitizeError } from "./results.js";
+import { GuildscribeError, sanitizeError } from "./protocol.js";
 import { readTranscriptionState } from "./transcription.js";
 
 export interface VerificationCheck {
@@ -274,7 +274,7 @@ const ensureNewDestination = async (destination: string): Promise<void> => {
     throw new GuildscribeError(
       "export_destination_exists",
       "Export destination already exists",
-      { details: { destination }, retrySafety: "unsafe" },
+      { details: { destination }, retrySafety: "never" },
     );
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;

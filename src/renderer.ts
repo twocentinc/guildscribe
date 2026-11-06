@@ -4,7 +4,7 @@ import path from "node:path";
 
 import type { RecordingInterval, RecordingLocation } from "./recording.js";
 import { intervalPCMPath } from "./recording.js";
-import { GuildscribeError, sanitizeError } from "./results.js";
+import { GuildscribeError, sanitizeError } from "./protocol.js";
 
 const PCM_RATE = 48_000;
 const PCM_CHANNELS = 2;

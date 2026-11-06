@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    tags-ignore:
+      - "v*"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - name: install FFmpeg
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+      - name: install dependencies
+        run: npm ci
+      - name: type-check
+        run: npm run check
+      - name: test
+        run: npm test
+      - name: test packed installation
+        run: npm run test:package
+      - name: inspect package manifest
+        run: npm pack --dry-run

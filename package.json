@@ -1,6 +1,6 @@
 {
   "name": "guildscribe",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A self-hosted Discord voice meeting recorder",
   "type": "module",
   "bin": {
@@ -8,8 +8,12 @@
   },
   "files": [
     "dist/",
-    "docs/",
-    "scripts/",
+    "docs/spec.md",
+    "scripts/daemon",
+    "scripts/installLaunchAgent.sh",
+    "scripts/uninstallLaunchAgent.sh",
+    "scripts/upgradeGlobal.sh",
+    "scripts/uninstallGlobal.sh",
     "README.md",
     "LICENSE"
   ],
@@ -17,7 +21,9 @@
     "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "package:release": "node scripts/packageRelease.mjs",
+    "contracts:update": "npm run build && node scripts/updateContractSnapshots.mjs",
+    "package:npm": "node scripts/packageRelease.mjs",
+    "package:release": "npm run package:npm",
     "prepack": "npm run build",
     "test:package": "node scripts/testPackage.mjs",
     "test": "npm run build && node --test test/*.test.mjs"

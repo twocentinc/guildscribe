@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { runCLI } from "./cli.js";
-import { GuildscribeError, sanitizeError } from "./results.js";
+import { GuildscribeError, sanitizeError } from "./protocol.js";
 
 void runCLI().catch((error: unknown) => {
   const failure =
@@ -9,7 +9,7 @@ void runCLI().catch((error: unknown) => {
       ? error
       : new GuildscribeError("internal_error", sanitizeError(error), {
           cause: error,
-          retrySafety: "unknown",
+          retrySafety: "unsafe",
         });
   process.stderr.write(
     `${JSON.stringify({

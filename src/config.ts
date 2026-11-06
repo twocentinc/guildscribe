@@ -16,74 +16,14 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
 
-import { GuildscribeError } from "./results.js";
-
-const snowflakeSchema = z
-  .string()
-  .regex(/^\d{15,22}$/, "Expected a Discord ID");
-const voiceChannelIDsSchema = z
-  .array(snowflakeSchema)
-  .min(1, "At least one voice channel ID is required")
-  .refine(
-    (values) => new Set(values).size === values.length,
-    "Voice channel IDs must be unique",
-  );
-const executablePathSchema = z
-  .string()
-  .min(1)
-  .refine(path.isAbsolute, "Hook path must be absolute");
-
-export const initRequestSchema = z
-  .object({
-    discordToken: z.string().trim().min(1),
-    voiceChannelIDs: voiceChannelIDsSchema,
-    emptyGraceMs: z.number().int().min(0).max(3_600_000).optional(),
-    hookTimeoutMs: z.number().int().min(1).max(3_600_000).optional(),
-    transcriptionHook: executablePathSchema.optional(),
-    hooks: z
-      .object({
-        channelJoined: executablePathSchema.optional(),
-        channelLeft: executablePathSchema.optional(),
-        recordingStarted: executablePathSchema.optional(),
-        recordingCompleted: executablePathSchema.optional(),
-        recordingFailed: executablePathSchema.optional(),
-        transcriptionCompleted: executablePathSchema.optional(),
-        transcriptionFailed: executablePathSchema.optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
-
-export type InitRequest = z.infer<typeof initRequestSchema>;
-
-const nullableExecutablePathSchema = executablePathSchema.nullable();
-export const configUpdateRequestSchema = z
-  .object({
-    discordToken: z.string().trim().min(1).optional(),
-    voiceChannelIDs: voiceChannelIDsSchema.optional(),
-    emptyGraceMs: z.number().int().min(0).max(3_600_000).optional(),
-    hookTimeoutMs: z.number().int().min(1).max(3_600_000).optional(),
-    transcriptionHook: nullableExecutablePathSchema.optional(),
-    hooks: z
-      .object({
-        channelJoined: nullableExecutablePathSchema.optional(),
-        channelLeft: nullableExecutablePathSchema.optional(),
-        recordingStarted: nullableExecutablePathSchema.optional(),
-        recordingCompleted: nullableExecutablePathSchema.optional(),
-        recordingFailed: nullableExecutablePathSchema.optional(),
-        transcriptionCompleted: nullableExecutablePathSchema.optional(),
-        transcriptionFailed: nullableExecutablePathSchema.optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict()
-  .refine((request) => Object.keys(request).length > 0, {
-    message: "At least one configuration value is required",
-  });
-
-export type ConfigUpdateRequest = z.infer<typeof configUpdateRequestSchema>;
+import {
+  configUpdateRequestSchema,
+  GuildscribeError,
+  initRequestSchema,
+  type ConfigUpdateRequest,
+  type InitRequest,
+  voiceChannelIDsSchema,
+} from "./protocol.js";
 
 export interface GuildscribePaths {
   home: string;
@@ -342,7 +282,7 @@ export const updateConfiguration = async (
     throw new GuildscribeError(
       "configuration_update_failed",
       "Could not update Guildscribe configuration",
-      { cause: error, retrySafety: "unknown" },
+      { cause: error, retrySafety: "unsafe" },
     );
   }
   return { changed: true, dryRun: false, restartRequired: true, configuration: preview };
@@ -367,8 +307,11 @@ export const initializeHome = async (
     throw new GuildscribeError(
       "configuration_exists",
       "Guildscribe is already initialized at this home",
-      { details: { configurationPath: paths.env }, retrySafety: "unsafe" },
+      { details: { configurationPath: paths.env }, retrySafety: "never" },
     );
+  }
+  if (await exists(paths.home)) {
+    await assertOwnedAndPrivate(paths.home, "directory");
   }
   if (dryRun) {
     return { created: false, home: paths.home, configurationPath: paths.env };
@@ -394,13 +337,13 @@ export const initializeHome = async (
       throw new GuildscribeError(
         "configuration_exists",
         "Guildscribe is already initialized at this home",
-        { details: { configurationPath: paths.env }, retrySafety: "unsafe" },
+        { details: { configurationPath: paths.env }, retrySafety: "never" },
       );
     }
     throw new GuildscribeError(
       "initialization_failed",
       "Could not initialize Guildscribe",
-      { cause: error, retrySafety: "unknown" },
+      { cause: error, retrySafety: "unsafe" },
     );
   } finally {
     await rm(temporaryPath, { force: true }).catch(() => undefined);
@@ -486,6 +429,7 @@ const optionalHook = (
 export const loadConfig = async (
   paths: GuildscribePaths,
 ): Promise<GuildscribeConfig> => {
+  await assertSecureRuntime(paths);
   let text: string;
   try {
     text = await readFile(paths.env, "utf8");
@@ -541,6 +485,49 @@ export const loadConfig = async (
     transcriptionHook: optionalHook(values, ENV_KEYS.transcriptionHook),
     hooks,
   };
+};
+
+const assertOwnedAndPrivate = async (
+  candidate: string,
+  expected: "directory" | "file",
+): Promise<void> => {
+  const info = await lstat(candidate);
+  const typeMatches =
+    expected === "directory" ? info.isDirectory() : info.isFile();
+  const currentUID = process.getuid?.();
+  const owned = currentUID === undefined || info.uid === currentUID;
+  const privateMode = (info.mode & 0o077) === 0;
+  if (info.isSymbolicLink() || !typeMatches || !owned || !privateMode) {
+    throw new GuildscribeError(
+      "configuration_unsafe",
+      "Guildscribe runtime paths must be owner-controlled, private, and not symbolic links",
+      {
+        details: {
+          path: candidate,
+          expected,
+          mode: `0${(info.mode & 0o777).toString(8)}`,
+          ownerMatches: owned,
+          symbolicLink: info.isSymbolicLink(),
+        },
+      },
+    );
+  }
+};
+
+export const assertSecureRuntime = async (
+  paths: GuildscribePaths,
+): Promise<void> => {
+  try {
+    await assertOwnedAndPrivate(paths.home, "directory");
+    await assertOwnedAndPrivate(paths.env, "file");
+  } catch (error) {
+    if (error instanceof GuildscribeError) throw error;
+    throw new GuildscribeError(
+      "configuration_missing",
+      "Guildscribe is not initialized; run guildscribe init",
+      { details: { configurationPath: paths.env }, cause: error },
+    );
+  }
 };
 
 export const verifyExecutable = async (candidate: string): Promise<void> => {

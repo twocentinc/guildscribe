@@ -8,7 +8,7 @@ import {
   GuildscribeError,
   diagnostic,
   sanitizeError,
-} from "./results.js";
+} from "./protocol.js";
 import { GuildscribeRecorder, recoverRecordings } from "./recording.js";
 import { TranscriptionWorker } from "./transcription.js";
 import {
@@ -50,7 +50,7 @@ const acquireLock = async (
         throw new GuildscribeError(
           "daemon_already_running",
           "Another Guildscribe daemon is already running",
-          { details: { pid: existing }, retrySafety: "safe" },
+          { details: { pid: existing }, retrySafety: "never" },
         );
       }
       await unlink(paths.lock).catch(() => undefined);

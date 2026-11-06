@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { configureDiagnosticFile, diagnostic } from "../dist/results.js";
+import { configureDiagnosticFile, diagnostic } from "../dist/protocol.js";
 
 test("daemon diagnostics rotate within the runtime log directory", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "guildscribe-logs-"));

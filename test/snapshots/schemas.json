@@ -1,0 +1,1672 @@
+{
+  "config.update.request": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "discordToken": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "emptyGraceMs": {
+        "maximum": 3600000,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "hooks": {
+        "additionalProperties": false,
+        "properties": {
+          "channelJoined": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "channelLeft": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordingCompleted": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordingFailed": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordingStarted": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transcriptionCompleted": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transcriptionFailed": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "hookTimeoutMs": {
+        "maximum": 3600000,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "transcriptionHook": {
+        "anyOf": [
+          {
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "voiceChannelIDs": {
+        "items": {
+          "pattern": "^\\d{15,22}$",
+          "type": "string"
+        },
+        "minItems": 1,
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "config.update.result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "changed": {
+        "type": "boolean"
+      },
+      "configuration": {
+        "additionalProperties": false,
+        "properties": {
+          "discordToken": {
+            "const": "[redacted]",
+            "type": "string"
+          },
+          "emptyGraceMs": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "hooks": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "hookTimeoutMs": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "transcriptionHook": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "voiceChannelIDs": {
+            "items": {
+              "pattern": "^\\d{15,22}$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "discordToken",
+          "voiceChannelIDs",
+          "emptyGraceMs",
+          "hookTimeoutMs",
+          "transcriptionHook",
+          "hooks"
+        ],
+        "type": "object"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "restartRequired": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "changed",
+      "dryRun",
+      "restartRequired",
+      "configuration"
+    ],
+    "type": "object"
+  },
+  "configuration.result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "discordToken": {
+        "const": "[redacted]",
+        "type": "string"
+      },
+      "emptyGraceMs": {
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer"
+      },
+      "hooks": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "hookTimeoutMs": {
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer"
+      },
+      "transcriptionHook": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "voiceChannelIDs": {
+        "items": {
+          "pattern": "^\\d{15,22}$",
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "discordToken",
+      "voiceChannelIDs",
+      "emptyGraceMs",
+      "hookTimeoutMs",
+      "transcriptionHook",
+      "hooks"
+    ],
+    "type": "object"
+  },
+  "doctor.result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "checks": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "details": {
+              "additionalProperties": {},
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "message": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "ok": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "name",
+            "ok",
+            "message"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "contracts": {
+        "additionalProperties": false,
+        "properties": {
+          "names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "schemaVersion": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "selected": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "schema": {
+                    "additionalProperties": {},
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "name",
+                  "schema"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "names",
+          "selected"
+        ],
+        "type": "object"
+      },
+      "passed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "checks",
+      "passed",
+      "contracts"
+    ],
+    "type": "object"
+  },
+  "envelope.error": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "command": {
+        "type": "string"
+      },
+      "error": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retrySafety": {
+            "enum": [
+              "safe",
+              "unsafe",
+              "never"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "details",
+          "message",
+          "retrySafety"
+        ],
+        "type": "object"
+      },
+      "ok": {
+        "const": false,
+        "type": "boolean"
+      },
+      "protocolVersion": {
+        "const": 1,
+        "type": "number"
+      },
+      "requestID": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "command",
+      "error",
+      "ok",
+      "protocolVersion",
+      "requestID"
+    ],
+    "type": "object"
+  },
+  "envelope.success": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "command": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "protocolVersion": {
+        "const": 1,
+        "type": "number"
+      },
+      "requestID": {
+        "type": "string"
+      },
+      "result": {}
+    },
+    "required": [
+      "command",
+      "ok",
+      "protocolVersion",
+      "requestID",
+      "result"
+    ],
+    "type": "object"
+  },
+  "help.result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "commands": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "definitions": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "mutation": {
+              "type": "boolean"
+            },
+            "requestSchema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "resultSchema": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "description",
+            "mutation",
+            "requestSchema",
+            "resultSchema"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "globalOptions": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "scope": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "scope",
+      "commands",
+      "definitions",
+      "globalOptions"
+    ],
+    "type": "object"
+  },
+  "init.request": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "discordToken": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "emptyGraceMs": {
+        "maximum": 3600000,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "hooks": {
+        "additionalProperties": false,
+        "properties": {
+          "channelJoined": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "channelLeft": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "recordingCompleted": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "recordingFailed": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "recordingStarted": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "transcriptionCompleted": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "transcriptionFailed": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "hookTimeoutMs": {
+        "maximum": 3600000,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "transcriptionHook": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "voiceChannelIDs": {
+        "items": {
+          "pattern": "^\\d{15,22}$",
+          "type": "string"
+        },
+        "minItems": 1,
+        "type": "array"
+      }
+    },
+    "required": [
+      "discordToken",
+      "voiceChannelIDs"
+    ],
+    "type": "object"
+  },
+  "init.result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "configurationPath": {
+        "type": "string"
+      },
+      "created": {
+        "type": "boolean"
+      },
+      "discordToken": {
+        "const": "[redacted]",
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "home": {
+        "type": "string"
+      },
+      "voiceChannelIDs": {
+        "items": {
+          "pattern": "^\\d{15,22}$",
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "created",
+      "home",
+      "configurationPath",
+      "dryRun",
+      "discordToken",
+      "voiceChannelIDs"
+    ],
+    "type": "object"
+  },
+  "recording.export.result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "anyOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "const": false,
+            "type": "boolean"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "dryRun": {
+            "const": true,
+            "type": "boolean"
+          },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "recordingID": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "changed",
+          "dryRun",
+          "recordingID",
+          "destination",
+          "files"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "const": true,
+            "type": "boolean"
+          },
+          "checksumsFile": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "dryRun": {
+            "const": false,
+            "type": "boolean"
+          },
+          "fileCount": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "recordingID": {
+            "type": "string"
+          },
+          "sourceBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "wavFile": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "changed",
+          "dryRun",
+          "recordingID",
+          "destination",
+          "fileCount",
+          "sourceBytes",
+          "wavFile",
+          "checksumsFile"
+        ],
+        "type": "object"
+      }
+    ]
+  },
+  "recording.summary": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "audioFile": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "audioFileBytes": {
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer"
+      },
+      "channelID": {
+        "type": "string"
+      },
+      "channelName": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "directory": {
+        "type": "string"
+      },
+      "durationMs": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "endedAt": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "fileCount": {
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer"
+      },
+      "guildID": {
+        "type": "string"
+      },
+      "guildName": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "interrupted": {
+        "type": "boolean"
+      },
+      "participantCount": {
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer"
+      },
+      "pcmFileBytes": {
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer"
+      },
+      "pcmFileCount": {
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer"
+      },
+      "recordingID": {
+        "type": "string"
+      },
+      "startedAt": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "storage": {
+        "enum": [
+          "inProgress",
+          "published"
+        ],
+        "type": "string"
+      },
+      "totalBytes": {
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer"
+      },
+      "transcriptionStatus": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "transcriptJSONBytes": {
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer"
+      },
+      "transcriptTextBytes": {
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "recordingID",
+      "guildID",
+      "guildName",
+      "channelID",
+      "channelName",
+      "status",
+      "storage",
+      "directory",
+      "startedAt",
+      "endedAt",
+      "durationMs",
+      "interrupted",
+      "audioFile",
+      "audioFileBytes",
+      "transcriptionStatus",
+      "transcriptJSONBytes",
+      "transcriptTextBytes",
+      "participantCount",
+      "pcmFileCount",
+      "pcmFileBytes",
+      "fileCount",
+      "totalBytes"
+    ],
+    "type": "object"
+  },
+  "recording.verify.result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "checks": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "details": {
+              "additionalProperties": {},
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "message": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "pass",
+                "warn",
+                "fail"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "status",
+            "message"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "files": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "relativePath": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "relativePath",
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "passed": {
+        "type": "boolean"
+      },
+      "recordingID": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "recordingID",
+      "passed",
+      "checks",
+      "files"
+    ],
+    "type": "object"
+  },
+  "recordings.list.result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "recordings": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "audioFile": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "audioFileBytes": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "channelID": {
+              "type": "string"
+            },
+            "channelName": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "directory": {
+              "type": "string"
+            },
+            "durationMs": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "endedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "fileCount": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "guildID": {
+              "type": "string"
+            },
+            "guildName": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "interrupted": {
+              "type": "boolean"
+            },
+            "participantCount": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "pcmFileBytes": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "pcmFileCount": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "recordingID": {
+              "type": "string"
+            },
+            "startedAt": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "storage": {
+              "enum": [
+                "inProgress",
+                "published"
+              ],
+              "type": "string"
+            },
+            "totalBytes": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "transcriptionStatus": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "transcriptJSONBytes": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "transcriptTextBytes": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "recordingID",
+            "guildID",
+            "guildName",
+            "channelID",
+            "channelName",
+            "status",
+            "storage",
+            "directory",
+            "startedAt",
+            "endedAt",
+            "durationMs",
+            "interrupted",
+            "audioFile",
+            "audioFileBytes",
+            "transcriptionStatus",
+            "transcriptJSONBytes",
+            "transcriptTextBytes",
+            "participantCount",
+            "pcmFileCount",
+            "pcmFileBytes",
+            "fileCount",
+            "totalBytes"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "totals": {
+        "additionalProperties": false,
+        "properties": {
+          "audioFileBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "fileCount": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "pcmFileBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "pcmFileCount": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "recordingCount": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "totalBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "recordingCount",
+          "audioFileBytes",
+          "pcmFileCount",
+          "pcmFileBytes",
+          "fileCount",
+          "totalBytes"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "recordings",
+      "totals"
+    ],
+    "type": "object"
+  },
+  "result.any": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema"
+  },
+  "startup.install.result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "anyOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "const": true,
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "plist": {
+            "type": "string"
+          },
+          "plistPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dryRun",
+          "label",
+          "plistPath",
+          "plist"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "const": false,
+            "type": "boolean"
+          },
+          "status": {
+            "additionalProperties": false,
+            "properties": {
+              "configured": {
+                "type": "boolean"
+              },
+              "label": {
+                "type": "string"
+              },
+              "lastExitStatus": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "loaded": {
+                "type": "boolean"
+              },
+              "pid": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "plistPath": {
+                "type": "string"
+              },
+              "running": {
+                "type": "boolean"
+              },
+              "state": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "label",
+              "plistPath",
+              "configured",
+              "loaded",
+              "running",
+              "state",
+              "pid",
+              "lastExitStatus"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "dryRun",
+          "status"
+        ],
+        "type": "object"
+      }
+    ]
+  },
+  "startup.logs.result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "files": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "lines": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "lines"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "files"
+    ],
+    "type": "object"
+  },
+  "startup.status.result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "configured": {
+        "type": "boolean"
+      },
+      "label": {
+        "type": "string"
+      },
+      "lastExitStatus": {
+        "anyOf": [
+          {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "loaded": {
+        "type": "boolean"
+      },
+      "pid": {
+        "anyOf": [
+          {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "plistPath": {
+        "type": "string"
+      },
+      "running": {
+        "type": "boolean"
+      },
+      "state": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "label",
+      "plistPath",
+      "configured",
+      "loaded",
+      "running",
+      "state",
+      "pid",
+      "lastExitStatus"
+    ],
+    "type": "object"
+  },
+  "startup.wrappedStatus.result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "status": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lastExitStatus": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "loaded": {
+            "type": "boolean"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "plistPath": {
+            "type": "string"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "label",
+          "plistPath",
+          "configured",
+          "loaded",
+          "running",
+          "state",
+          "pid",
+          "lastExitStatus"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status"
+    ],
+    "type": "object"
+  },
+  "status.result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "configuration": {
+        "additionalProperties": false,
+        "properties": {
+          "emptyGraceMs": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "transcriptionEnabled": {
+            "type": "boolean"
+          },
+          "voiceChannelIDs": {
+            "items": {
+              "pattern": "^\\d{15,22}$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "voiceChannelIDs",
+          "emptyGraceMs",
+          "transcriptionEnabled"
+        ],
+        "type": "object"
+      },
+      "daemon": {
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uptimeMs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "running",
+          "pid",
+          "startedAt",
+          "uptimeMs"
+        ],
+        "type": "object"
+      },
+      "latestRecording": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "audioFile": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "audioFileBytes": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "channelID": {
+                "type": "string"
+              },
+              "channelName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "directory": {
+                "type": "string"
+              },
+              "durationMs": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "endedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fileCount": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "guildID": {
+                "type": "string"
+              },
+              "guildName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "interrupted": {
+                "type": "boolean"
+              },
+              "participantCount": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "pcmFileBytes": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "pcmFileCount": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "recordingID": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "storage": {
+                "enum": [
+                  "inProgress",
+                  "published"
+                ],
+                "type": "string"
+              },
+              "totalBytes": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "transcriptionStatus": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "transcriptJSONBytes": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "transcriptTextBytes": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "recordingID",
+              "guildID",
+              "guildName",
+              "channelID",
+              "channelName",
+              "status",
+              "storage",
+              "directory",
+              "startedAt",
+              "endedAt",
+              "durationMs",
+              "interrupted",
+              "audioFile",
+              "audioFileBytes",
+              "transcriptionStatus",
+              "transcriptJSONBytes",
+              "transcriptTextBytes",
+              "participantCount",
+              "pcmFileCount",
+              "pcmFileBytes",
+              "fileCount",
+              "totalBytes"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "recording": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "storage": {
+        "additionalProperties": false,
+        "properties": {
+          "audioFileBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "fileCount": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "pcmFileBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "pcmFileCount": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "recordingCount": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "totalBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "recordingCount",
+          "audioFileBytes",
+          "pcmFileCount",
+          "pcmFileBytes",
+          "fileCount",
+          "totalBytes"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "daemon",
+      "configuration",
+      "recording",
+      "latestRecording",
+      "storage"
+    ],
+    "type": "object"
+  },
+  "version.result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "protocolVersion": {
+        "const": 1,
+        "type": "number"
+      },
+      "schemaVersion": {
+        "const": 1,
+        "type": "number"
+      },
+      "version": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "protocolVersion",
+      "schemaVersion",
+      "version"
+    ],
+    "type": "object"
+  }
+}

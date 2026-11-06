@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, open, rm, stat } from "node:fs/promises";
+import { access, lstat, open, rm } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -17,7 +17,12 @@ import {
   verifyExecutable,
 } from "./config.js";
 import { runCommand } from "./renderer.js";
-import { sanitizeError } from "./results.js";
+import {
+  getSchema,
+  sanitizeError,
+  SCHEMA_VERSION,
+  schemaNames,
+} from "./protocol.js";
 
 export interface DoctorCheck {
   name: string;
@@ -29,6 +34,11 @@ export interface DoctorCheck {
 export interface DoctorResult {
   checks: DoctorCheck[];
   passed: boolean;
+  contracts: {
+    schemaVersion: number;
+    names: string[];
+    selected: { name: string; schema: Record<string, unknown> } | null;
+  };
 }
 
 const modeString = (mode: number): string => `0${(mode & 0o777).toString(8)}`;
@@ -206,11 +216,19 @@ const checkDiscord = async (
 export const runDoctor = async (
   paths: GuildscribePaths,
   timeoutMs: number,
+  selectedSchema?: string,
 ): Promise<DoctorResult> => {
+  const selectedContract = selectedSchema
+    ? { name: selectedSchema, schema: getSchema(selectedSchema) }
+    : null;
   const checks: DoctorCheck[] = [];
   try {
-    const info = await stat(paths.home);
-    const secure = info.isDirectory() && (info.mode & 0o077) === 0;
+    const info = await lstat(paths.home);
+    const secure =
+      info.isDirectory() &&
+      !info.isSymbolicLink() &&
+      (info.mode & 0o077) === 0 &&
+      (process.getuid?.() === undefined || info.uid === process.getuid?.());
     pushCheck(
       checks,
       "filesystem.home",
@@ -227,8 +245,12 @@ export const runDoctor = async (
   }
 
   try {
-    const info = await stat(paths.env);
-    const secure = info.isFile() && (info.mode & 0o077) === 0;
+    const info = await lstat(paths.env);
+    const secure =
+      info.isFile() &&
+      !info.isSymbolicLink() &&
+      (info.mode & 0o077) === 0 &&
+      (process.getuid?.() === undefined || info.uid === process.getuid?.());
     pushCheck(
       checks,
       "filesystem.configuration",
@@ -326,5 +348,13 @@ export const runDoctor = async (
     );
   }
 
-  return { checks, passed: checks.every((check) => check.ok) };
+  return {
+    checks,
+    passed: checks.every((check) => check.ok),
+    contracts: {
+      schemaVersion: SCHEMA_VERSION,
+      names: schemaNames(),
+      selected: selectedContract,
+    },
+  };
 };

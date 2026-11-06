@@ -44,6 +44,10 @@ Saratonin so it can be published and installed on its own.
 
 - Use dmbridge as the command-line design reference without copying its
   provider-specific concepts.
+- Treat `src/commands.ts` as the canonical public command catalog and
+  `src/protocol.ts` as the canonical owner of JSON schemas, envelopes, error
+  semantics, exit classes, and contract versions. Do not maintain competing
+  command or schema inventories in documentation.
 - Organize commands as `guildscribe <resource> <action> [flags]` where a
   resource/action form is natural.
 - Emit one stable, versioned JSON result envelope on stdout for finite
@@ -66,6 +70,54 @@ Saratonin so it can be published and installed on its own.
 - Keep recording verification read-only. Exports must target a new location,
   include checksums, exclude transient staging data, and leave their source
   unchanged.
+
+## Reusable JSON-first CLI policy
+
+Apply this section to future agent-operated CLIs unless the project has a
+specific reason to narrow it. Keep project-specific product rules outside this
+section so it can be copied without carrying Guildscribe behavior with it.
+
+- Every finite command writes exactly one versioned JSON envelope to stdout.
+  Diagnostics go to stderr and never corrupt stdout JSON.
+- Include a caller-supplied request ID when present and generate one otherwise.
+  Use stable command context in success and error envelopes.
+- Publish retry safety as exactly `safe`, `unsafe`, or `never`. `safe`
+  means automatic repetition cannot duplicate or compound an effect;
+  `unsafe` means the outcome may be ambiguous; `never` means the caller must
+  change input or state before retrying.
+- Reserve stable exit classes for success, internal failures, invalid input,
+  configuration, unsupported operations, external dependencies, timeouts,
+  missing resources, and missing confirmation. Do not derive automation from
+  human error prose.
+- Version envelopes and schemas independently. A released schema version is
+  immutable; incompatible contract changes require the schema version to move.
+- Canonicalize object keys and deterministic collection ordering anywhere
+  agents compare, cache, sign, or snapshot output.
+- Read credentials and structured mutation requests from JSON files or stdin,
+  never plaintext flags. Request parsers must reject unknown fields.
+- Every meaningful mutation supports `--dry-run`. Non-interactive mode
+  disables prompts but never grants authorization or confirmation.
+- Idempotent mutations report whether state changed. Destructive commands
+  require an explicit confirmation mechanism even in non-interactive mode.
+- Duration flags require explicit units such as `ms`, `s`, or `m`; do not
+  accept ambiguous bare numbers.
+- Global flags are behavior, not decoration. `--pretty`, `--request-id`,
+  `--timeout`, `--no-input`, `--quiet`, `--verbose`, and
+  `--verbosity` must either work consistently or not be advertised.
+- Help and contract discovery must be JSON-native. The runtime command registry
+  and exported schemas are authoritative; Markdown examples are illustrative.
+- Snapshot the public command catalog and exported JSON schemas. Intentional
+  contract changes update snapshots in the same reviewed change.
+- Keep CI read-only with minimum permissions on pushes and pull requests.
+  Grant release write, identity-token, and attestation permissions only to the
+  final publish job after verification succeeds.
+- Test the actual packed artifact, inspect its allowlist and exclusions, install
+  it with lifecycle scripts disabled, and smoke-test its executable and JSON
+  discovery surfaces.
+- Derive the displayed CLI version from the package manifest or release source
+  of truth. Never duplicate a hardcoded runtime version.
+- Enforce credential-file ownership, regular-file type, non-symlink status, and
+  owner-only permissions when loading secrets, not only in a diagnostic command.
 
 ## Event hooks
 
@@ -113,8 +165,21 @@ Saratonin so it can be published and installed on its own.
 - Verify the actual packed artifact through an isolated install before release.
 - Release artifacts must include a SHA-256 checksum and build-provenance
   attestation.
+- Run ordinary push and pull-request CI with read-only repository permissions.
+  Keep elevated release permissions isolated to the publish job.
 - Upgrade and uninstall workflows must reject root execution and preserve the
   selected Guildscribe runtime home.
+
+## Versioning and verification
+
+- `package.json` is the version source of truth; keep the root
+  `package-lock.json` versions synchronized.
+- Bump the version for every owner-requested repository change: patch for
+  compatible fixes, minor for backward-compatible capabilities, and major only
+  for intentional breaking changes.
+- Run `npm run check`, `npm test`, and `npm run test:package` before final
+  handoff. Run `npm run contracts:update` only for an intentional reviewed
+  command or schema contract change.
 
 ## Documentation
 

@@ -23,7 +23,7 @@ import {
   type RecordingLocation,
   type RecordingManifest,
 } from "./recording.js";
-import { diagnostic, PROTOCOL_VERSION, sanitizeError } from "./results.js";
+import { diagnostic, PROTOCOL_VERSION, sanitizeError } from "./protocol.js";
 
 export type TranscriptionStatus =
   | "pending"

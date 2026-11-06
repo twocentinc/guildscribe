@@ -10,7 +10,7 @@ import {
   type LaunchAgentDefinition,
   type LaunchAgentStatus,
 } from "./macosLaunchAgent.js";
-import { GuildscribeError } from "./results.js";
+import { GuildscribeError } from "./protocol.js";
 
 export const GUILDSCRIBE_LAUNCH_AGENT_LABEL = "dev.guildscribe.daemon";
 

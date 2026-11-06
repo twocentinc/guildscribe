@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
-import { GuildscribeError, sanitizeError } from "./results.js";
+import { GuildscribeError, sanitizeError } from "./protocol.js";
 
 export type LaunchAgentProcessType = "Background" | "Interactive" | "Standard";
 
@@ -342,7 +342,7 @@ export class MacOSLaunchAgent {
     throw new GuildscribeError(
       "launch_agent_stop_timeout",
       "The LaunchAgent did not stop within 10 seconds",
-      { retrySafety: "safe" },
+      { retrySafety: "unsafe" },
     );
   }
 

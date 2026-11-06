@@ -86,12 +86,14 @@ guildscribe/
     installLaunchAgent.sh
     packageRelease.mjs
     testPackage.mjs
+    updateContractSnapshots.mjs
     uninstallGlobal.sh
     uninstallLaunchAgent.sh
     upgradeGlobal.sh
   src/
     index.ts
     cli.ts
+    commands.ts
     config.ts
     daemon.ts
     doctor.ts
@@ -100,12 +102,13 @@ guildscribe/
     recording.ts
     recordingArtifacts.ts
     renderer.ts
-    results.ts
+    protocol.ts
     startup.ts
     status.ts
     transcription.ts
   test/
     config.test.mjs
+    contracts.test.mjs
     macosLaunchAgent.test.mjs
     manifests.test.mjs
     operationsCli.test.mjs
@@ -113,9 +116,12 @@ guildscribe/
     recordingArtifacts.test.mjs
     recorder.test.mjs
     recordings.test.mjs
-    results.test.mjs
+    protocol.test.mjs
     status.test.mjs
     transcription.test.mjs
+    snapshots/
+      command-catalog.json
+      schemas.json
 ```
 
 `src/recording.ts` is the single recording-domain owner. It contains recording
@@ -124,6 +130,13 @@ recovery, and live Discord capture orchestration. `src/renderer.ts` remains the
 audio engine, while `src/recordingArtifacts.ts` owns offline verification and
 portable export. This keeps the complete recording lifecycle readable in one
 place without mixing FFmpeg or export mechanics into it.
+
+`src/commands.ts` is the runtime source of truth for public commands,
+descriptions, mutation classification, and request/result schema associations.
+`src/protocol.ts` owns request schemas, JSON envelopes, retry safety, exit
+classes, diagnostics, schema export, and package-version discovery. Reviewed
+snapshots freeze the public catalog and schemas. `guildscribe help [scope...]`
+and `guildscribe doctor --schema <name>` expose the same contracts as JSON.
 
 ## Runtime home
 
@@ -169,7 +182,9 @@ recording so speaker audio, identity, timing, and capture gaps stay inspectable
 and available to optional processing.
 
 The runtime home uses mode `0700` and `.env` uses mode `0600` on POSIX systems.
-Runtime files never belong in the source checkout.
+Guildscribe rejects a runtime home or configuration file that is a symbolic
+link, is owned by another user, has group/world permissions, or is not the
+expected filesystem type. Runtime files never belong in the source checkout.
 
 `daemon.jsonl` is the structured operational log. Guildscribe rotates it at 10
 MB and retains three prior files. The launchd stdout and stderr files capture
@@ -428,10 +443,10 @@ transport.
 Guildscribe follows dmbridge's agent-safe conventions:
 
 ```text
-guildscribe help
+guildscribe help [scope...]
 guildscribe version
 guildscribe init --request <file-or-dash> [--dry-run]
-guildscribe doctor
+guildscribe doctor [--schema <name>]
 guildscribe status
 guildscribe config show
 guildscribe config update --request <file-or-dash> [--dry-run]
@@ -458,6 +473,7 @@ Shared options are:
 --request-id <ID>
 --pretty
 --timeout <duration-with-unit>
+--no-input
 --non-interactive
 --quiet
 --verbose
@@ -465,8 +481,9 @@ Shared options are:
 ```
 
 Finite commands emit one protocol-version-1 JSON envelope on stdout. Errors
-use stable codes, structured details, and retry-safety classifications.
-Diagnostics use stderr. Secrets never appear in output.
+use stable codes, structured details, exit classes, and `safe`, `unsafe`, or
+`never` retry classifications. Diagnostics use stderr. Secrets never appear in
+output. Schema version 1 is independently discoverable through doctor.
 
 ### Recording inventory
 
@@ -581,16 +598,18 @@ must run as the logged-in user and reject root execution.
 ## Packaging, releases, upgrade, and uninstall
 
 The npm package name and executable are both `guildscribe`. Published packages
-contain compiled JavaScript, documentation, launchd helpers, and maintenance
-scripts; runtime data is never packaged. `npm run test:package` installs an
-actual packed tarball into an isolated prefix and runs its `guildscribe
-version` command. `npm run package:release` writes the tarball and a SHA-256
-sidecar below ignored `artifacts/`.
+contain compiled JavaScript, the canonical specification, launchd helpers, and
+user-facing maintenance scripts; runtime data, source, tests, release builders,
+and CI files are never packaged. `npm run test:package` inspects an actual
+tarball, installs it with lifecycle scripts disabled, and smoke-tests its
+`guildscribe version` and `guildscribe help` commands. `npm run package:npm`
+writes the tarball and a SHA-256 sidecar below ignored `artifacts/`.
 
-Tags matching `v<package-version>` run the GitHub release workflow. It checks
-that the tag matches `package.json`, runs type checking, tests, and the package
-smoke test, builds a release tarball, creates a build-provenance attestation,
-and publishes the tarball plus checksum to a GitHub release. npm registry
+Push and pull-request CI runs with read-only repository permissions. Tags
+matching `v<package-version>` run the release workflow. Its read-only job checks
+the tag, type-checks, tests, smoke-tests the package, and builds artifacts. Only
+the dependent publish job receives release, identity-token, and attestation
+permissions before publishing the attested tarball and checksum. npm registry
 publication is deliberately not automated by this slice.
 
 `scripts/upgradeGlobal.sh` upgrades the globally installed npm package and
@@ -652,6 +671,6 @@ No reasoning stage follows transcription.
 - Pending or interrupted transcription survives restart, while failed work
   remains inspectable and is not retried automatically.
 - Valid staged output publishes canonical JSON and text without deleting PCM.
-- The packed npm CLI installs in isolation and returns a valid JSON version
-  envelope.
+- The packed npm CLI excludes source and build tooling, installs with lifecycle
+  scripts disabled, and returns valid JSON version and help envelopes.
 - No SQLite database or runtime dependency is created.

@@ -49,13 +49,20 @@ npm install
 npm run build
 ```
 
+Discover commands and machine-readable contracts without parsing prose:
+
+```sh
+node dist/index.js help --pretty
+node dist/index.js recordings --help --pretty
+```
+
 Initialize from a JSON request without putting the token in shell history:
 
 ```sh
 printf '%s' '{"discordToken":"...","voiceChannelIDs":["..."]}' |
   node dist/index.js init --request -
 
-node dist/index.js doctor --pretty
+node dist/index.js doctor --schema init.request --pretty
 node dist/index.js status --pretty
 node dist/index.js config show --pretty
 node dist/index.js recordings list --pretty
@@ -130,7 +137,7 @@ Test the real packed CLI, or create a checksummed release artifact:
 
 ```sh
 npm run test:package
-npm run package:release
+npm run package:npm
 ```
 
 For a globally installed package, `scripts/upgradeGlobal.sh` upgrades

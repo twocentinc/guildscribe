@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readFile,
@@ -75,7 +76,7 @@ test("configuration reads the legacy singular channel key as a fallback", async 
   const home = path.join(root, "home");
   const paths = getPaths(home);
   try {
-    await mkdir(home, { recursive: true });
+    await mkdir(home, { recursive: true, mode: 0o700 });
     await writeFile(
       paths.env,
       [
@@ -83,9 +84,64 @@ test("configuration reads the legacy singular channel key as a fallback", async 
         'GUILDSCRIBE_VOICE_CHANNEL_ID="123456789012345678"',
         "",
       ].join("\n"),
+      { mode: 0o600 },
     );
     const config = await loadConfig(paths);
     assert.deepEqual(config.voiceChannelIDs, ["123456789012345678"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("configuration loading rejects permissive and symbolic-link secrets", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "guildscribe-secure-config-"));
+  const paths = getPaths(path.join(root, "home"));
+  const linked = path.join(root, "linked.env");
+  try {
+    await initializeHome(
+      paths,
+      {
+        discordToken: "secret",
+        voiceChannelIDs: ["123456789012345678"],
+      },
+      false,
+    );
+    await chmod(paths.env, 0o644);
+    await assert.rejects(
+      loadConfig(paths),
+      (error) => error?.code === "configuration_unsafe",
+    );
+    await chmod(paths.env, 0o600);
+    await writeFile(linked, await readFile(paths.env), { mode: 0o600 });
+    await rm(paths.env);
+    await import("node:fs/promises").then(({ symlink }) =>
+      symlink(linked, paths.env),
+    );
+    await assert.rejects(
+      loadConfig(paths),
+      (error) => error?.code === "configuration_unsafe",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("initialization refuses an unsafe pre-existing runtime home", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "guildscribe-unsafe-home-"));
+  const home = path.join(root, "home");
+  try {
+    await mkdir(home, { mode: 0o755 });
+    await assert.rejects(
+      initializeHome(
+        getPaths(home),
+        {
+          discordToken: "secret",
+          voiceChannelIDs: ["123456789012345678"],
+        },
+        false,
+      ),
+      (error) => error?.code === "configuration_unsafe",
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

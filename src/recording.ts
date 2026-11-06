@@ -32,7 +32,7 @@ import { z } from "zod";
 import type { GuildscribeConfig, GuildscribePaths } from "./config.js";
 import { invokeHook } from "./hooks.js";
 import { renderMaster } from "./renderer.js";
-import { diagnostic, GuildscribeError, sanitizeError } from "./results.js";
+import { diagnostic, GuildscribeError, sanitizeError } from "./protocol.js";
 import type { TranscriptionStatus } from "./transcription.js";
 
 // Recording storage and formats
@@ -288,7 +288,7 @@ export const publishRecording = async (
         "Completed recording destination already exists",
         {
           details: { recordingID: manifest.recordingID },
-          retrySafety: "unsafe",
+          retrySafety: "never",
         },
       );
     }
@@ -682,7 +682,7 @@ export const findRecording = async (
     throw new GuildscribeError(
       "recording_ambiguous",
       "Recording ID exists in more than one storage location",
-      { details: { recordingID }, retrySafety: "unknown" },
+      { details: { recordingID }, retrySafety: "never" },
     );
   }
   return matches[0] as DiscoveredRecording;
