@@ -16,7 +16,7 @@ import {
   publishRecording,
   saveInterval,
   saveManifest,
-} from "../dist/manifests.js";
+} from "../dist/recording.js";
 import {
   exportRecording,
   verifyRecording,
@@ -24,7 +24,7 @@ import {
 import {
   finalizeParticipants,
   initializeParticipants,
-} from "../dist/participants.js";
+} from "../dist/recording.js";
 import { renderMaster } from "../dist/renderer.js";
 
 const createVerifiedRecording = async () => {

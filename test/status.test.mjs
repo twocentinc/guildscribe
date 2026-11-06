@@ -8,7 +8,7 @@ import {
   getPaths,
   initializeHome,
 } from "../dist/config.js";
-import { createRecording, saveManifest } from "../dist/manifests.js";
+import { createRecording, saveManifest } from "../dist/recording.js";
 import {
   daemonLockText,
   getRuntimeStatus,

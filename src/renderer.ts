@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 import { open, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
-import type { RecordingInterval, RecordingLocation } from "./manifests.js";
-import { intervalPCMPath } from "./manifests.js";
+import type { RecordingInterval, RecordingLocation } from "./recording.js";
+import { intervalPCMPath } from "./recording.js";
 import { GuildscribeError, sanitizeError } from "./results.js";
 
 const PCM_RATE = 48_000;

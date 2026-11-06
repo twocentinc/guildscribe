@@ -12,8 +12,8 @@ import {
   publishRecording,
   saveInterval,
   saveManifest,
-} from "../dist/manifests.js";
-import { listRecordings, showRecording } from "../dist/recordings.js";
+} from "../dist/recording.js";
+import { listRecordings, showRecording } from "../dist/recording.js";
 
 const execFileAsync = promisify(execFile);
 

@@ -5,13 +5,13 @@ import path from "node:path";
 import test from "node:test";
 
 import { getPaths } from "../dist/config.js";
-import { createRecording } from "../dist/manifests.js";
+import { createRecording } from "../dist/recording.js";
 import {
   finalizeParticipants,
   initializeParticipants,
   readParticipants,
   updateParticipantPresence,
-} from "../dist/participants.js";
+} from "../dist/recording.js";
 
 test("participant metadata retains presence sessions and speaking duration", async () => {
   const home = await mkdtemp(path.join(tmpdir(), "guildscribe-participants-"));

@@ -96,12 +96,9 @@ guildscribe/
     daemon.ts
     doctor.ts
     hooks.ts
-    manifests.ts
     macosLaunchAgent.ts
-    participants.ts
+    recording.ts
     recordingArtifacts.ts
-    recorder.ts
-    recordings.ts
     renderer.ts
     results.ts
     startup.ts
@@ -120,6 +117,13 @@ guildscribe/
     status.test.mjs
     transcription.test.mjs
 ```
+
+`src/recording.ts` is the single recording-domain owner. It contains recording
+and interval formats, atomic storage, participant presence, inventory,
+recovery, and live Discord capture orchestration. `src/renderer.ts` remains the
+audio engine, while `src/recordingArtifacts.ts` owns offline verification and
+portable export. This keeps the complete recording lifecycle readable in one
+place without mixing FFmpeg or export mechanics into it.
 
 ## Runtime home
 

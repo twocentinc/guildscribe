@@ -12,9 +12,9 @@ import {
   publishRecording,
   saveInterval,
   saveManifest,
-} from "../dist/manifests.js";
+} from "../dist/recording.js";
 import { renderMaster } from "../dist/renderer.js";
-import { recoverRecordings } from "../dist/recorder.js";
+import { recoverRecordings } from "../dist/recording.js";
 
 test("recording manifests retain speaker metadata and publish validated audio", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "guildscribe-recording-"));

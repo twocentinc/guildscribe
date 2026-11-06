@@ -22,7 +22,7 @@ import {
   type RecordingInterval,
   type RecordingLocation,
   type RecordingManifest,
-} from "./manifests.js";
+} from "./recording.js";
 import { diagnostic, PROTOCOL_VERSION, sanitizeError } from "./results.js";
 
 export type TranscriptionStatus =

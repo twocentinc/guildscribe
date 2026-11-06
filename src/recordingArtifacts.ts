@@ -13,13 +13,14 @@ import {
 import path from "node:path";
 
 import type { GuildscribePaths } from "./config.js";
-import { loadIntervals, readManifest } from "./manifests.js";
-import { readParticipants } from "./participants.js";
 import {
   collectRecordingFiles,
   findRecording,
+  loadIntervals,
+  readManifest,
+  readParticipants,
   showRecording,
-} from "./recordings.js";
+} from "./recording.js";
 import { validateMP3, runCommand } from "./renderer.js";
 import { GuildscribeError, sanitizeError } from "./results.js";
 import { readTranscriptionState } from "./transcription.js";

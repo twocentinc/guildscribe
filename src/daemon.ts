@@ -9,7 +9,7 @@ import {
   diagnostic,
   sanitizeError,
 } from "./results.js";
-import { GuildscribeRecorder, recoverRecordings } from "./recorder.js";
+import { GuildscribeRecorder, recoverRecordings } from "./recording.js";
 import { TranscriptionWorker } from "./transcription.js";
 import {
   daemonLockText,

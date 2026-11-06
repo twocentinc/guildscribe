@@ -7,10 +7,10 @@ import {
 } from "./config.js";
 import {
   listInProgress,
+  listRecordings,
   readManifest,
   type RecordingManifest,
-} from "./manifests.js";
-import { listRecordings } from "./recordings.js";
+} from "./recording.js";
 
 const daemonLockSchema = z
   .object({

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 
 import type { GuildscribeConfig, GuildscribePaths } from "./config.js";
-import type { RecordingLocation, RecordingManifest } from "./manifests.js";
+import type { RecordingLocation, RecordingManifest } from "./recording.js";
 import { diagnostic, PROTOCOL_VERSION, sanitizeError } from "./results.js";
 
 export type HookEventName =

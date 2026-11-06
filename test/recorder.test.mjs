@@ -12,7 +12,7 @@ import { ChannelType, Collection } from "discord.js";
 import prism from "prism-media";
 
 import { getPaths } from "../dist/config.js";
-import { GuildscribeRecorder } from "../dist/recorder.js";
+import { GuildscribeRecorder } from "../dist/recording.js";
 
 const USER_A = "333333333333333333";
 const USER_B = "666666666666666666";

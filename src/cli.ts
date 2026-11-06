@@ -12,7 +12,7 @@ import {
 } from "./config.js";
 import { runDaemon } from "./daemon.js";
 import { runDoctor } from "./doctor.js";
-import { listRecordings, showRecording } from "./recordings.js";
+import { listRecordings, showRecording } from "./recording.js";
 import {
   exportRecording,
   verifyRecording,

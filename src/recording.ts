@@ -8,7 +8,15 @@ import {
 } from "@discordjs/voice";
 import { randomUUID } from "node:crypto";
 import { createWriteStream, type WriteStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import {
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+} from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream";
 
@@ -19,30 +27,668 @@ import {
   type VoiceState,
 } from "discord.js";
 import prism from "prism-media";
+import { z } from "zod";
 
 import type { GuildscribeConfig, GuildscribePaths } from "./config.js";
 import { invokeHook } from "./hooks.js";
-import {
-  capturedDurationMs,
-  createRecording,
-  listInProgress,
-  loadIntervals,
-  publishRecording,
-  readManifest,
-  saveInterval,
-  saveManifest,
-  type RecordingInterval,
-  type RecordingLocation,
-  type RecordingManifest,
-} from "./manifests.js";
 import { renderMaster } from "./renderer.js";
-import { diagnostic, sanitizeError } from "./results.js";
-import {
-  finalizeParticipants,
-  initializeParticipants,
-  updateParticipantPresence,
-  type ParticipantSnapshot,
-} from "./participants.js";
+import { diagnostic, GuildscribeError, sanitizeError } from "./results.js";
+import type { TranscriptionStatus } from "./transcription.js";
+
+// Recording storage and formats
+
+export type RecordingStatus =
+  | "recording"
+  | "finalizing"
+  | "complete"
+  | "failed";
+
+export interface RecordingManifest {
+  version: 1;
+  recordingID: string;
+  guildID: string;
+  guildName?: string | null;
+  channelID: string;
+  channelName?: string | null;
+  status: RecordingStatus;
+  startedAt: string;
+  updatedAt: string;
+  emptySince: string | null;
+  endedAt: string | null;
+  durationMs: number | null;
+  interrupted: boolean;
+  audioFile: string | null;
+  intervalCount: number;
+  error: string | null;
+}
+
+export interface RecordingInterval {
+  version: 1;
+  intervalID: string;
+  recordingID: string;
+  kind: "speaking" | "connectionGap";
+  userID: string | null;
+  username: string | null;
+  displayName: string | null;
+  startOffsetMs: number;
+  endOffsetMs: number;
+  incomplete: boolean;
+  reason: string | null;
+  pcmFile: string | null;
+  updatedAt: string;
+}
+
+export interface RecordingLocation {
+  directory: string;
+  intervalsDirectory: string;
+  manifestPath: string;
+}
+
+export const locationForDirectory = (directory: string): RecordingLocation => ({
+  directory,
+  intervalsDirectory: path.join(directory, "intervals"),
+  manifestPath: path.join(directory, "recording.json"),
+});
+
+const atomicWrite = async (
+  destination: string,
+  contents: string,
+  mode = 0o600,
+): Promise<void> => {
+  const temporary = path.join(
+    path.dirname(destination),
+    `.${path.basename(destination)}.${randomUUID()}.tmp`,
+  );
+  const handle = await open(temporary, "wx", mode);
+  try {
+    await handle.writeFile(contents, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  try {
+    await rename(temporary, destination);
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
+};
+
+export const writeJSON = async (
+  destination: string,
+  value: unknown,
+): Promise<void> =>
+  atomicWrite(destination, `${JSON.stringify(value, null, 2)}\n`);
+
+export const createRecording = async (
+  paths: GuildscribePaths,
+  guildID: string,
+  channelID: string,
+  now = new Date(),
+  names: { guildName?: string | null; channelName?: string | null } = {},
+): Promise<{ location: RecordingLocation; manifest: RecordingManifest }> => {
+  const recordingID = randomUUID();
+  const location = locationForDirectory(
+    path.join(paths.inProgress, recordingID),
+  );
+  await mkdir(location.intervalsDirectory, { recursive: true, mode: 0o700 });
+  const timestamp = now.toISOString();
+  const manifest: RecordingManifest = {
+    version: 1,
+    recordingID,
+    guildID,
+    guildName: names.guildName ?? null,
+    channelID,
+    channelName: names.channelName ?? null,
+    status: "recording",
+    startedAt: timestamp,
+    updatedAt: timestamp,
+    emptySince: null,
+    endedAt: null,
+    durationMs: null,
+    interrupted: false,
+    audioFile: null,
+    intervalCount: 0,
+    error: null,
+  };
+  await writeJSON(location.manifestPath, manifest);
+  return { location, manifest };
+};
+
+export const saveManifest = async (
+  location: RecordingLocation,
+  manifest: RecordingManifest,
+): Promise<void> => {
+  manifest.updatedAt = new Date().toISOString();
+  await writeJSON(location.manifestPath, manifest);
+};
+
+export const readManifest = async (
+  location: RecordingLocation,
+): Promise<RecordingManifest> => {
+  try {
+    return JSON.parse(
+      await readFile(location.manifestPath, "utf8"),
+    ) as RecordingManifest;
+  } catch (error) {
+    throw new GuildscribeError(
+      "invalid_recording_manifest",
+      "Could not read recording manifest",
+      { details: { manifestPath: location.manifestPath }, cause: error },
+    );
+  }
+};
+
+export const saveInterval = async (
+  location: RecordingLocation,
+  interval: RecordingInterval,
+): Promise<void> => {
+  interval.updatedAt = new Date().toISOString();
+  await writeJSON(
+    path.join(location.intervalsDirectory, `${interval.intervalID}.json`),
+    interval,
+  );
+};
+
+export const loadIntervals = async (
+  location: RecordingLocation,
+): Promise<RecordingInterval[]> => {
+  let names: string[];
+  try {
+    names = await readdir(location.intervalsDirectory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const intervals: RecordingInterval[] = [];
+  for (const name of names.filter((entry) => entry.endsWith(".json")).sort()) {
+    try {
+      const parsed = JSON.parse(
+        await readFile(path.join(location.intervalsDirectory, name), "utf8"),
+      ) as RecordingInterval;
+      if (parsed.version === 1 && parsed.intervalID && parsed.recordingID) {
+        intervals.push(parsed);
+      }
+    } catch {
+      // A damaged sidecar is skipped so the remaining captured audio can recover.
+    }
+  }
+  return intervals.sort(
+    (left, right) => left.startOffsetMs - right.startOffsetMs,
+  );
+};
+
+export const listInProgress = async (
+  paths: GuildscribePaths,
+): Promise<RecordingLocation[]> => {
+  let entries;
+  try {
+    entries = await readdir(paths.inProgress, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) =>
+      locationForDirectory(path.join(paths.inProgress, entry.name)),
+    )
+    .sort((left, right) => left.directory.localeCompare(right.directory));
+};
+
+export const intervalPCMPath = (
+  location: RecordingLocation,
+  interval: RecordingInterval,
+): string | null =>
+  interval.pcmFile
+    ? path.join(location.intervalsDirectory, path.basename(interval.pcmFile))
+    : null;
+
+export const capturedDurationMs = async (
+  location: RecordingLocation,
+  intervals: RecordingInterval[],
+): Promise<number> => {
+  let maximum = 0;
+  for (const interval of intervals) {
+    let end = interval.endOffsetMs;
+    const pcmPath = intervalPCMPath(location, interval);
+    if (interval.kind === "speaking" && pcmPath) {
+      try {
+        const info = await stat(pcmPath);
+        const audioDuration = Math.floor(
+          (info.size * 1_000) / (48_000 * 2 * 2),
+        );
+        end = interval.startOffsetMs + audioDuration;
+      } catch {
+        // The sidecar end remains the recovery boundary when PCM is unavailable.
+      }
+    }
+    maximum = Math.max(maximum, end);
+  }
+  return Math.max(100, maximum);
+};
+
+export const publishRecording = async (
+  paths: GuildscribePaths,
+  location: RecordingLocation,
+  manifest: RecordingManifest,
+): Promise<RecordingLocation> => {
+  const started = new Date(manifest.startedAt);
+  const year = String(started.getUTCFullYear());
+  const month = String(started.getUTCMonth() + 1).padStart(2, "0");
+  const parent = path.join(paths.recordings, year, month);
+  const destination = path.join(parent, manifest.recordingID);
+  await mkdir(parent, { recursive: true, mode: 0o700 });
+  try {
+    await rename(location.directory, destination);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new GuildscribeError(
+        "recording_destination_exists",
+        "Completed recording destination already exists",
+        {
+          details: { recordingID: manifest.recordingID },
+          retrySafety: "unsafe",
+        },
+      );
+    }
+    throw error;
+  }
+  return locationForDirectory(destination);
+};
+
+// Participant metadata
+
+const presenceSessionSchema = z
+  .object({
+    joinedAt: z.iso.datetime(),
+    leftAt: z.iso.datetime().nullable(),
+  })
+  .strict();
+
+const participantSchema = z
+  .object({
+    userID: z.string().min(1),
+    username: z.string().nullable(),
+    displayName: z.string().nullable(),
+    sessions: z.array(presenceSessionSchema),
+    speakingDurationMs: z.number().int().min(0),
+  })
+  .strict();
+
+const participantDocumentSchema = z
+  .object({
+    version: z.literal(1),
+    recordingID: z.string().min(1),
+    updatedAt: z.iso.datetime(),
+    participants: z.array(participantSchema),
+  })
+  .strict();
+
+export type ParticipantDocument = z.infer<typeof participantDocumentSchema>;
+
+export interface ParticipantSnapshot {
+  userID: string;
+  username: string | null;
+  displayName: string | null;
+}
+
+const documentPath = (location: RecordingLocation): string =>
+  path.join(location.directory, "participants.json");
+
+export const readParticipants = async (
+  location: RecordingLocation,
+): Promise<ParticipantDocument | null> => {
+  try {
+    return participantDocumentSchema.parse(
+      JSON.parse(await readFile(documentPath(location), "utf8")) as unknown,
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+};
+
+const saveParticipants = async (
+  location: RecordingLocation,
+  document: ParticipantDocument,
+): Promise<void> => {
+  document.updatedAt = new Date().toISOString();
+  document.participants.sort((left, right) =>
+    left.userID.localeCompare(right.userID),
+  );
+  await writeJSON(documentPath(location), document);
+};
+
+export const initializeParticipants = async (
+  location: RecordingLocation,
+  recordingID: string,
+  participants: ParticipantSnapshot[],
+  joinedAt: string,
+): Promise<void> => {
+  const unique = new Map(
+    participants.map((participant) => [participant.userID, participant]),
+  );
+  await saveParticipants(location, {
+    version: 1,
+    recordingID,
+    updatedAt: joinedAt,
+    participants: [...unique.values()].map((participant) => ({
+      ...participant,
+      sessions: [{ joinedAt, leftAt: null }],
+      speakingDurationMs: 0,
+    })),
+  });
+};
+
+export const updateParticipantPresence = async (
+  location: RecordingLocation,
+  recordingID: string,
+  participant: ParticipantSnapshot,
+  present: boolean,
+  occurredAt = new Date().toISOString(),
+): Promise<void> => {
+  const document = (await readParticipants(location)) ?? {
+    version: 1 as const,
+    recordingID,
+    updatedAt: occurredAt,
+    participants: [],
+  };
+  let current = document.participants.find(
+    (candidate) => candidate.userID === participant.userID,
+  );
+  if (!current) {
+    current = {
+      ...participant,
+      sessions: [],
+      speakingDurationMs: 0,
+    };
+    document.participants.push(current);
+  } else {
+    current.username = participant.username;
+    current.displayName = participant.displayName;
+  }
+  const openSession = [...current.sessions]
+    .reverse()
+    .find((session) => session.leftAt === null);
+  if (present && !openSession) {
+    current.sessions.push({ joinedAt: occurredAt, leftAt: null });
+  }
+  if (!present && openSession) openSession.leftAt = occurredAt;
+  await saveParticipants(location, document);
+};
+
+export const finalizeParticipants = async (
+  location: RecordingLocation,
+  recordingID: string,
+  intervals: RecordingInterval[],
+  endedAt: string,
+): Promise<void> => {
+  const document = (await readParticipants(location)) ?? {
+    version: 1 as const,
+    recordingID,
+    updatedAt: endedAt,
+    participants: [],
+  };
+  const durations = new Map<string, number>();
+  for (const interval of intervals) {
+    if (interval.kind !== "speaking" || !interval.userID) continue;
+    durations.set(
+      interval.userID,
+      (durations.get(interval.userID) ?? 0) +
+        Math.max(0, interval.endOffsetMs - interval.startOffsetMs),
+    );
+    if (
+      !document.participants.some(
+        (participant) => participant.userID === interval.userID,
+      )
+    ) {
+      document.participants.push({
+        userID: interval.userID,
+        username: interval.username,
+        displayName: interval.displayName,
+        sessions: [],
+        speakingDurationMs: 0,
+      });
+    }
+  }
+  for (const participant of document.participants) {
+    for (const session of participant.sessions) {
+      if (session.leftAt === null) session.leftAt = endedAt;
+    }
+    participant.speakingDurationMs = durations.get(participant.userID) ?? 0;
+  }
+  await saveParticipants(location, document);
+};
+
+// Recording inventory
+
+export type RecordingStorage = "inProgress" | "published";
+
+export interface RecordingSummary {
+  recordingID: string;
+  guildID: string;
+  guildName: string | null;
+  channelID: string;
+  channelName: string | null;
+  status: RecordingManifest["status"];
+  storage: RecordingStorage;
+  directory: string;
+  startedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+  interrupted: boolean;
+  audioFile: string | null;
+  audioFileBytes: number;
+  transcriptionStatus: TranscriptionStatus | null;
+  transcriptJSONBytes: number;
+  transcriptTextBytes: number;
+  participantCount: number;
+  pcmFileCount: number;
+  pcmFileBytes: number;
+  fileCount: number;
+  totalBytes: number;
+}
+
+export interface RecordingTotals {
+  recordingCount: number;
+  audioFileBytes: number;
+  pcmFileCount: number;
+  pcmFileBytes: number;
+  fileCount: number;
+  totalBytes: number;
+}
+
+export interface DiscoveredRecording {
+  storage: RecordingStorage;
+  location: RecordingLocation;
+}
+
+export interface FileUsage {
+  relativePath: string;
+  bytes: number;
+}
+
+const directoryEntries = async (directory: string) => {
+  try {
+    return await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+};
+
+export const discoverRecordings = async (
+  paths: GuildscribePaths,
+): Promise<DiscoveredRecording[]> => {
+  const discovered: DiscoveredRecording[] = [];
+  for (const entry of await directoryEntries(paths.inProgress)) {
+    if (!entry.isDirectory()) continue;
+    discovered.push({
+      storage: "inProgress",
+      location: locationForDirectory(path.join(paths.inProgress, entry.name)),
+    });
+  }
+  for (const year of await directoryEntries(paths.recordings)) {
+    if (!year.isDirectory()) continue;
+    const yearDirectory = path.join(paths.recordings, year.name);
+    for (const month of await directoryEntries(yearDirectory)) {
+      if (!month.isDirectory()) continue;
+      const monthDirectory = path.join(yearDirectory, month.name);
+      for (const recording of await directoryEntries(monthDirectory)) {
+        if (!recording.isDirectory()) continue;
+        discovered.push({
+          storage: "published",
+          location: locationForDirectory(
+            path.join(monthDirectory, recording.name),
+          ),
+        });
+      }
+    }
+  }
+  return discovered;
+};
+
+export const collectRecordingFiles = async (
+  root: string,
+  directory = root,
+): Promise<FileUsage[]> => {
+  const files: FileUsage[] = [];
+  for (const entry of await directoryEntries(directory)) {
+    const candidate = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await collectRecordingFiles(root, candidate)));
+    } else if (entry.isFile()) {
+      const info = await stat(candidate);
+      files.push({
+        relativePath: path.relative(root, candidate),
+        bytes: info.size,
+      });
+    }
+  }
+  return files;
+};
+
+const summarizeRecording = async (
+  discovered: DiscoveredRecording,
+): Promise<RecordingSummary> => {
+  const manifest = await readManifest(discovered.location);
+  const files = await collectRecordingFiles(discovered.location.directory);
+  const pcmFiles = files.filter(({ relativePath }) =>
+    relativePath.endsWith(".pcm"),
+  );
+  const audioRelativePath = manifest.audioFile
+    ? path.basename(manifest.audioFile)
+    : null;
+  const audioFileBytes = audioRelativePath
+    ? (files.find(({ relativePath }) => relativePath === audioRelativePath)
+        ?.bytes ?? 0)
+    : 0;
+  const { readTranscriptionState } = await import("./transcription.js");
+  const [transcription, participants] = await Promise.all([
+    readTranscriptionState(discovered.location),
+    readParticipants(discovered.location),
+  ]);
+  const transcriptJSONBytes =
+    files.find(({ relativePath }) => relativePath === "transcript.json")
+      ?.bytes ?? 0;
+  const transcriptTextBytes =
+    files.find(({ relativePath }) => relativePath === "transcript.txt")
+      ?.bytes ?? 0;
+  return {
+    recordingID: manifest.recordingID,
+    guildID: manifest.guildID,
+    guildName: manifest.guildName ?? null,
+    channelID: manifest.channelID,
+    channelName: manifest.channelName ?? null,
+    status: manifest.status,
+    storage: discovered.storage,
+    directory: discovered.location.directory,
+    startedAt: manifest.startedAt,
+    endedAt: manifest.endedAt,
+    durationMs: manifest.durationMs,
+    interrupted: manifest.interrupted,
+    audioFile: manifest.audioFile,
+    audioFileBytes,
+    transcriptionStatus: transcription?.status ?? null,
+    transcriptJSONBytes,
+    transcriptTextBytes,
+    participantCount: participants?.participants.length ?? 0,
+    pcmFileCount: pcmFiles.length,
+    pcmFileBytes: pcmFiles.reduce((total, file) => total + file.bytes, 0),
+    fileCount: files.length,
+    totalBytes: files.reduce((total, file) => total + file.bytes, 0),
+  };
+};
+
+const totalsFor = (recordings: RecordingSummary[]): RecordingTotals =>
+  recordings.reduce<RecordingTotals>(
+    (totals, recording) => ({
+      recordingCount: totals.recordingCount + 1,
+      audioFileBytes: totals.audioFileBytes + recording.audioFileBytes,
+      pcmFileCount: totals.pcmFileCount + recording.pcmFileCount,
+      pcmFileBytes: totals.pcmFileBytes + recording.pcmFileBytes,
+      fileCount: totals.fileCount + recording.fileCount,
+      totalBytes: totals.totalBytes + recording.totalBytes,
+    }),
+    {
+      recordingCount: 0,
+      audioFileBytes: 0,
+      pcmFileCount: 0,
+      pcmFileBytes: 0,
+      fileCount: 0,
+      totalBytes: 0,
+    },
+  );
+
+export const listRecordings = async (
+  paths: GuildscribePaths,
+): Promise<{ recordings: RecordingSummary[]; totals: RecordingTotals }> => {
+  const recordings = await Promise.all(
+    (await discoverRecordings(paths)).map(summarizeRecording),
+  );
+  recordings.sort(
+    (left, right) =>
+      right.startedAt.localeCompare(left.startedAt) ||
+      left.recordingID.localeCompare(right.recordingID),
+  );
+  return { recordings, totals: totalsFor(recordings) };
+};
+
+export const showRecording = async (
+  paths: GuildscribePaths,
+  recordingID: string,
+): Promise<RecordingSummary> => {
+  return summarizeRecording(await findRecording(paths, recordingID));
+};
+
+export const findRecording = async (
+  paths: GuildscribePaths,
+  recordingID: string,
+): Promise<DiscoveredRecording> => {
+  const matches = (await discoverRecordings(paths)).filter(
+    ({ location }) => path.basename(location.directory) === recordingID,
+  );
+  if (matches.length === 0) {
+    throw new GuildscribeError(
+      "recording_not_found",
+      "Recording was not found",
+      {
+        details: { recordingID },
+      },
+    );
+  }
+  if (matches.length > 1) {
+    throw new GuildscribeError(
+      "recording_ambiguous",
+      "Recording ID exists in more than one storage location",
+      { details: { recordingID }, retrySafety: "unknown" },
+    );
+  }
+  return matches[0] as DiscoveredRecording;
+};
+
+// Live Discord recorder
 
 const SEGMENT_SILENCE_MS = 500;
 const CHECKPOINT_MS = 2_000;
@@ -858,3 +1504,4 @@ export class GuildscribeRecorder {
     }
   }
 }
+

@@ -18,12 +18,12 @@ import {
   publishRecording,
   saveInterval,
   saveManifest,
-} from "../dist/manifests.js";
+} from "../dist/recording.js";
 import {
   readTranscriptionState,
   TranscriptionWorker,
 } from "../dist/transcription.js";
-import { showRecording } from "../dist/recordings.js";
+import { showRecording } from "../dist/recording.js";
 
 const prepareRecording = async (hookSource) => {
   const home = await mkdtemp(path.join(tmpdir(), "guildscribe-transcription-"));
