@@ -38,6 +38,7 @@ export const initRequestSchema = z
     voiceChannelIDs: voiceChannelIDsSchema,
     emptyGraceMs: z.number().int().min(0).max(3_600_000).optional(),
     hookTimeoutMs: z.number().int().min(1).max(3_600_000).optional(),
+    transcriptionHook: executablePathSchema.optional(),
     hooks: z
       .object({
         channelJoined: executablePathSchema.optional(),
@@ -82,6 +83,7 @@ export interface GuildscribeConfig {
   voiceChannelIDs: string[];
   emptyGraceMs: number;
   hookTimeoutMs: number;
+  transcriptionHook: string | undefined;
   hooks: HookConfiguration;
 }
 
@@ -91,6 +93,7 @@ const ENV_KEYS = {
   legacyVoiceChannelID: "GUILDSCRIBE_VOICE_CHANNEL_ID",
   emptyGraceMs: "GUILDSCRIBE_EMPTY_GRACE_MS",
   hookTimeoutMs: "GUILDSCRIBE_HOOK_TIMEOUT_MS",
+  transcriptionHook: "GUILDSCRIBE_TRANSCRIPTION_HOOK",
   channelJoined: "GUILDSCRIBE_HOOK_CHANNEL_JOINED",
   channelLeft: "GUILDSCRIBE_HOOK_CHANNEL_LEFT",
   recordingStarted: "GUILDSCRIBE_HOOK_RECORDING_STARTED",
@@ -212,6 +215,11 @@ const renderEnv = (request: InitRequest): string => {
   if (hooks?.transcriptionFailed) {
     lines.push(
       `${ENV_KEYS.transcriptionFailed}=${encodeValue(hooks.transcriptionFailed)}`,
+    );
+  }
+  if (request.transcriptionHook) {
+    lines.push(
+      `${ENV_KEYS.transcriptionHook}=${encodeValue(request.transcriptionHook)}`,
     );
   }
   return `${lines.join("\n")}\n`;
@@ -407,6 +415,7 @@ export const loadConfig = async (
     voiceChannelIDs: channelResult.data,
     emptyGraceMs: integerSetting(values, ENV_KEYS.emptyGraceMs, 30_000, 0),
     hookTimeoutMs: integerSetting(values, ENV_KEYS.hookTimeoutMs, 30_000, 1),
+    transcriptionHook: optionalHook(values, ENV_KEYS.transcriptionHook),
     hooks,
   };
 };

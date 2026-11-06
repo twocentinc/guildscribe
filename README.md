@@ -3,8 +3,8 @@
 Guildscribe is a self-hosted Discord bot that records voice meetings while
 preserving Discord speaker identity. It renders a combined MP3 with FFmpeg and
 supports optional local transcription through a replaceable executable hook.
-The default hook uses Nightcrew, without adding meeting summaries or cloud
-model dependencies to Guildscribe.
+The hook may call Nightcrew or any other transcription service without adding
+model management, meeting summaries, or cloud dependencies to Guildscribe.
 
 The detailed product and architecture contract is in
 [docs/spec.md](docs/spec.md).
@@ -21,11 +21,13 @@ The first working slice provides:
 - `guildscribe startup` commands and install scripts for macOS LaunchAgent
   supervision;
 - recoverable, permanently retained per-speaker PCM intervals with atomic JSON
-  manifests and FFmpeg-rendered combined MP3 recordings; and
-- executable event hooks for channel and recording lifecycle events.
+  manifests and FFmpeg-rendered combined MP3 recordings;
+- executable event hooks for channel and recording lifecycle events; and
+- an optional durable transcription worker that validates and publishes
+  `transcript.json` and `transcript.txt` from one configured executable.
 
-The transcription-hook worker and bundled Nightcrew adapter are specified but
-not implemented in this slice.
+Transcription is disabled unless `transcriptionHook` is supplied during
+initialization. Guildscribe does not bundle a model or Nightcrew adapter.
 
 ## Prerequisites
 
@@ -34,9 +36,8 @@ not implemented in this slice.
 - `ffprobe`
 
 Guildscribe verifies these programs but does not install them. Nightcrew and
-Granite are optional and are not required for capture. Once the transcription
-slice is implemented, an owner may replace Nightcrew with a custom executable
-or disable transcription.
+Granite are optional and are not required for capture. A transcription hook
+may use either of them, another local tool, or a remote service.
 
 ## Setup
 
@@ -60,6 +61,21 @@ node dist/index.js daemon run
 `recordings list` includes published and recoverable in-progress recordings,
 with aggregate file, MP3, and retained PCM counts and byte sizes. `recordings
 show` returns the same storage summary for one recording ID.
+
+To enable transcription, add an absolute executable path to the initialization
+request:
+
+```json
+{
+  "discordToken": "...",
+  "voiceChannelIDs": ["..."],
+  "transcriptionHook": "/absolute/path/to/transcribe"
+}
+```
+
+After publication, Guildscribe invokes the hook outside the capture loop and
+passes a versioned JSON request on stdin. See
+[the specification](docs/spec.md#transcription-hook) for the exact contract.
 
 The default runtime home is `~/.guildscribe`. Use `--home <absolute-path>` for
 an isolated installation.

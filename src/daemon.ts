@@ -10,6 +10,7 @@ import {
   sanitizeError,
 } from "./results.js";
 import { GuildscribeRecorder, recoverRecordings } from "./recorder.js";
+import { TranscriptionWorker } from "./transcription.js";
 
 const processIsAlive = (pid: number): boolean => {
   try {
@@ -71,7 +72,14 @@ export const runDaemon = async (
   const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
   });
-  const recorder = new GuildscribeRecorder({ client, config, paths });
+  const transcription = new TranscriptionWorker(paths, config);
+  const recorder = new GuildscribeRecorder({
+    client,
+    config,
+    paths,
+    onRecordingPublished: (location, manifest) =>
+      transcription.enqueue(location, manifest).then(() => undefined),
+  });
   let shuttingDown = false;
 
   const shutdown = async (signal: string, exitCode: number): Promise<never> => {
@@ -80,6 +88,11 @@ export const runDaemon = async (
     diagnostic("info", "daemon.stopping", { signal });
     await recorder.shutdown().catch((error: unknown) => {
       diagnostic("error", "daemon.recorderShutdownFailed", {
+        error: sanitizeError(error),
+      });
+    });
+    await transcription.shutdown().catch((error: unknown) => {
+      diagnostic("error", "daemon.transcriptionShutdownFailed", {
         error: sanitizeError(error),
       });
     });
@@ -106,7 +119,10 @@ export const runDaemon = async (
   });
 
   try {
-    await recoverRecordings(paths, config);
+    await transcription.recover();
+    await recoverRecordings(paths, config, (location, manifest) =>
+      transcription.enqueue(location, manifest).then(() => undefined),
+    );
     await client.login(config.discordToken);
     if (!client.isReady()) {
       await new Promise<void>((resolve) =>
@@ -120,6 +136,7 @@ export const runDaemon = async (
     });
     await recorder.initialize();
   } catch (error) {
+    await transcription.shutdown().catch(() => undefined);
     client.destroy();
     await releaseLock().catch(() => undefined);
     throw new GuildscribeError(

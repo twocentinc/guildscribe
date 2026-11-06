@@ -273,6 +273,33 @@ export const runDoctor = async (
   await checkWritableDirectory(checks, "filesystem.logs", paths.logs);
 
   if (config) {
+    if (config.transcriptionHook) {
+      try {
+        await verifyExecutable(config.transcriptionHook);
+        pushCheck(
+          checks,
+          "transcription.hook",
+          true,
+          "Transcription hook is executable",
+          { executable: config.transcriptionHook },
+        );
+      } catch (error) {
+        pushCheck(
+          checks,
+          "transcription.hook",
+          false,
+          sanitizeError(error),
+          { executable: config.transcriptionHook },
+        );
+      }
+    } else {
+      pushCheck(
+        checks,
+        "transcription.hook",
+        true,
+        "Optional transcription is disabled",
+      );
+    }
     for (const [name, executable] of Object.entries(config.hooks)) {
       try {
         await verifyExecutable(executable);

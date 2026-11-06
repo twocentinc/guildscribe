@@ -41,6 +41,7 @@ export const invokeHook = async (
   event: HookEventName,
   location: RecordingLocation,
   manifest: RecordingManifest,
+  details: Record<string, unknown> = {},
 ): Promise<void> => {
   const executable = hookPathForEvent(config, event);
   if (!executable) return;
@@ -56,6 +57,7 @@ export const invokeHook = async (
     manifestPath: location.manifestPath,
     status: manifest.status,
     audioFile: manifest.audioFile,
+    ...details,
   };
   await new Promise<void>((resolve) => {
     const child = spawn(executable, [event], {

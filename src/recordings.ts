@@ -9,6 +9,10 @@ import {
   type RecordingManifest,
 } from "./manifests.js";
 import { GuildscribeError } from "./results.js";
+import {
+  readTranscriptionState,
+  type TranscriptionStatus,
+} from "./transcription.js";
 
 export type RecordingStorage = "inProgress" | "published";
 
@@ -25,6 +29,9 @@ export interface RecordingSummary {
   interrupted: boolean;
   audioFile: string | null;
   audioFileBytes: number;
+  transcriptionStatus: TranscriptionStatus | null;
+  transcriptJSONBytes: number;
+  transcriptTextBytes: number;
   pcmFileCount: number;
   pcmFileBytes: number;
   fileCount: number;
@@ -125,6 +132,13 @@ const summarizeRecording = async (
     ? (files.find(({ relativePath }) => relativePath === audioRelativePath)
         ?.bytes ?? 0)
     : 0;
+  const transcription = await readTranscriptionState(discovered.location);
+  const transcriptJSONBytes =
+    files.find(({ relativePath }) => relativePath === "transcript.json")
+      ?.bytes ?? 0;
+  const transcriptTextBytes =
+    files.find(({ relativePath }) => relativePath === "transcript.txt")
+      ?.bytes ?? 0;
   return {
     recordingID: manifest.recordingID,
     guildID: manifest.guildID,
@@ -138,6 +152,9 @@ const summarizeRecording = async (
     interrupted: manifest.interrupted,
     audioFile: manifest.audioFile,
     audioFileBytes,
+    transcriptionStatus: transcription?.status ?? null,
+    transcriptJSONBytes,
+    transcriptTextBytes,
     pcmFileCount: pcmFiles.length,
     pcmFileBytes: pcmFiles.reduce((total, file) => total + file.bytes, 0),
     fileCount: files.length,

@@ -100,6 +100,9 @@ test("recording inventory reports audio, PCM, and aggregate byte usage", async (
     assert.equal(completed.pcmFileCount, 1);
     assert.equal(completed.pcmFileBytes, 100);
     assert.equal(completed.audioFileBytes, 50);
+    assert.equal(completed.transcriptionStatus, null);
+    assert.equal(completed.transcriptJSONBytes, 0);
+    assert.equal(completed.transcriptTextBytes, 0);
     assert.ok(completed.totalBytes > 150);
 
     assert.equal(result.totals.recordingCount, 2);

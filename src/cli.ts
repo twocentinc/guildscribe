@@ -29,7 +29,7 @@ import {
   uninstallStartup,
 } from "./startup.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 interface GlobalOptions {
   home?: string;

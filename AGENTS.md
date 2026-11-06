@@ -14,9 +14,8 @@ Saratonin so it can be published and installed on its own.
 ## Scope
 
 - Guildscribe is a Discord meeting recorder with optional local transcription
-  supplied through a dedicated transcription hook. The bundled default hook
-  uses Nightcrew; an owner may replace it with an executable script.
-- The first implementation slice stops after capture and FFmpeg rendering.
+  supplied through one dedicated executable hook. Nightcrew integration, when
+  desired, belongs in an external hook adapter rather than Guildscribe.
 - FFmpeg owns media encoding and validation inside Guildscribe.
 - Guildscribe assumes `ffmpeg` and `ffprobe` are already installed.
 - Guildscribe must not install models, manage model servers, summarize
@@ -94,6 +93,9 @@ Saratonin so it can be published and installed on its own.
   never delete captured PCM.
 - Preserve interrupted capture data and recover it into a playable recording
   when possible after restart.
+- Run at most one transcription hook at a time. Resume durable pending or
+  interrupted work after restart, but do not automatically retry a durable
+  failed result.
 - Guildscribe must not implement a second desktop-presence sampler or local
   model scheduler. Nightcrew fails closed on unknown or unhealthy presence
   before starting Granite work.

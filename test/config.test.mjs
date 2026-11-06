@@ -21,6 +21,7 @@ test("initialization writes owner-only configuration and refuses overwrite", asy
     discordToken: "test-token-value",
     voiceChannelIDs: ["123456789012345678", "223456789012345678"],
     emptyGraceMs: 42_000,
+    transcriptionHook: "/usr/bin/true",
     hooks: {
       channelJoined: "/usr/bin/true",
       channelLeft: "/usr/bin/true",
@@ -37,6 +38,7 @@ test("initialization writes owner-only configuration and refuses overwrite", asy
     assert.equal(config.discordToken, request.discordToken);
     assert.deepEqual(config.voiceChannelIDs, request.voiceChannelIDs);
     assert.equal(config.emptyGraceMs, 42_000);
+    assert.equal(config.transcriptionHook, "/usr/bin/true");
     assert.equal(config.hooks.channelJoined, "/usr/bin/true");
     assert.equal(config.hooks.channelLeft, "/usr/bin/true");
     assert.equal(config.hooks.recordingCompleted, "/usr/bin/true");
@@ -47,6 +49,10 @@ test("initialization writes owner-only configuration and refuses overwrite", asy
     assert.match(
       await readFile(paths.env, "utf8"),
       /GUILDSCRIBE_VOICE_CHANNEL_IDS/,
+    );
+    assert.match(
+      await readFile(paths.env, "utf8"),
+      /GUILDSCRIBE_TRANSCRIPTION_HOOK/,
     );
 
     await assert.rejects(

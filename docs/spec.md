@@ -1,7 +1,7 @@
 # Guildscribe specification
 
-Status: implementation contract for the first recording slice, with a
-replaceable transcription hook retained as the next product boundary.
+Status: implementation contract for recording and optional executable-hook
+transcription.
 
 ## Product definition
 
@@ -10,11 +10,10 @@ voice-channel allowlist. It joins and records only one channel at a time.
 Discord supplies speaker identity, Guildscribe keeps speaker-separated capture
 intervals, and FFmpeg publishes a combined MP3.
 
-The next slice may run a dedicated transcription hook over completed
-participant audio. Its bundled default adapter submits local Granite Speech
-work to Nightcrew while the host is away; an owner may substitute an executable
-script. Guildscribe does not summarize, extract bullets, run reasoning prompts,
-manage models, or run its own inference server.
+An optional dedicated transcription hook runs over completed participant audio.
+The owner may point it at a Nightcrew adapter or any other executable.
+Guildscribe does not bundle an adapter, summarize, extract bullets, run
+reasoning prompts, manage models, or run its own inference server.
 
 ## Current scope
 
@@ -30,11 +29,13 @@ The implemented slice:
   human returns;
 - renders and validates one combined MP3;
 - preserves interrupted recordings and recovers their captured audio after a
-  restart; and
-- invokes optional local executable hooks for recording events.
+  restart;
+- invokes optional local executable hooks for recording events; and
+- durably queues one optional transcription executable at a time, validates its
+  staged result, and publishes canonical transcript files.
 
-The transcription worker, bundled Nightcrew adapter, speaker-track publication,
-transcript merging, and result persistence are not implemented in this slice.
+Bundled Nightcrew integration, speaker-track publication, transcript merging,
+and reasoning stages are not implemented.
 
 ## Non-goals
 
@@ -93,6 +94,7 @@ guildscribe/
     renderer.ts
     results.ts
     startup.ts
+    transcription.ts
   test/
     config.test.mjs
     macosLaunchAgent.test.mjs
@@ -100,6 +102,7 @@ guildscribe/
     recorder.test.mjs
     recordings.test.mjs
     results.test.mjs
+    transcription.test.mjs
 ```
 
 ## Runtime home
@@ -128,6 +131,9 @@ another home for every command.
       <month>/
         <recordingID>/
           recording.json
+          transcription.json
+          transcript.json
+          transcript.txt
           intervals/
             <intervalID>.json
             <intervalID>.pcm
@@ -155,6 +161,7 @@ GUILDSCRIBE_DISCORD_TOKEN
 GUILDSCRIBE_VOICE_CHANNEL_IDS
 GUILDSCRIBE_EMPTY_GRACE_MS
 GUILDSCRIBE_HOOK_TIMEOUT_MS
+GUILDSCRIBE_TRANSCRIPTION_HOOK
 GUILDSCRIBE_HOOK_CHANNEL_JOINED
 GUILDSCRIBE_HOOK_CHANNEL_LEFT
 GUILDSCRIBE_HOOK_RECORDING_STARTED
@@ -168,14 +175,17 @@ GUILDSCRIBE_HOOK_TRANSCRIPTION_FAILED
 Discord channel IDs. The legacy singular `GUILDSCRIBE_VOICE_CHANNEL_ID` remains
 a read-only compatibility fallback when the plural key is absent.
 
-The two `HOOK_TRANSCRIPTION_*` names reserve lifecycle notifications for the
-transcription slice and are not emitted yet. Lifecycle-hook values are absolute
+`GUILDSCRIBE_TRANSCRIPTION_HOOK` is an optional absolute executable path. When
+it is absent, transcription is disabled. It is separate from the two
+`HOOK_TRANSCRIPTION_*` lifecycle notifications. All hook values are absolute
 executable paths. The default empty grace is 30 seconds and the default
-lifecycle hook timeout is 30 seconds.
+lifecycle hook timeout is 30 seconds; that short timeout does not apply to the
+transcription worker.
 
 ## Persistent documents
 
-`recording.json` and every interval sidecar are versioned JSON documents.
+`recording.json`, `transcription.json`, `transcript.json`, and every interval
+sidecar are versioned JSON documents.
 Guildscribe writes them through a same-directory temporary file and atomic
 rename. The recording manifest records identity, lifecycle state, timestamps,
 duration, final audio filename, interruption status, and sanitized failure.
@@ -190,6 +200,12 @@ Speaking interval sidecars record:
 
 Connection-gap sidecars use the same timing fields with a gap reason and no
 speaker. Display names never appear in filenames.
+
+`transcription.json` records the independent worker state, attempt count,
+timestamps, and sanitized failure. `transcript.json` contains the validated
+version-1 transcript document; `transcript.txt` is its readable text projection.
+The temporary `.transcription-staging` directory is removed after successful
+publication and may remain after failure for inspection.
 
 ## Recording lifecycle
 
@@ -238,6 +254,8 @@ channel.left
 recording.started
 recording.completed
 recording.failed
+transcription.completed
+transcription.failed
 ```
 
 `channel.joined` fires after a newly created Discord voice connection reaches
@@ -265,35 +283,109 @@ implicitly enables transcription.
 
 ## Transcription hook
 
-Proposed: `GUILDSCRIBE_TRANSCRIPTION_HOOK` selects the worker that performs
-transcription. An omitted value or `nightcrew` uses the bundled Nightcrew
-adapter, `off` disables transcription, and an absolute executable path replaces
-the adapter. This setting does not exist in the implemented configuration yet.
-The transcription worker has its own durable lifecycle and is not subject to
-the short lifecycle-hook timeout.
+`GUILDSCRIBE_TRANSCRIPTION_HOOK` selects one executable worker. Omitting the
+setting disables transcription. Guildscribe does not choose or bundle a model
+adapter. The worker has its own durable lifecycle and is not subject to the
+short lifecycle-hook timeout.
 
-After a completed recording and its audio are durable, Guildscribe may enqueue
-one transcription-hook invocation keyed by recording ID. The invocation runs
-outside the Discord capture loop, so a slow or unavailable transcriber cannot
-delay joining, recording, rendering, or publishing another meeting. Pending
-work survives daemon restart, and the hook contract requires idempotent handling
-of the recording ID.
+After a completed recording is durable, Guildscribe writes
+`transcription.json` with status `pending` and schedules the recording on a
+single serial worker. Enqueueing only waits for that state write; model work
+runs outside the Discord capture loop. The states are `pending`, `running`,
+`complete`, and `failed`, with attempt count, timestamps, and a sanitized error.
+Daemon startup requeues `pending` work and converts an interrupted `running`
+state back to `pending`. It does not automatically retry `failed` work or
+retroactively enqueue recordings that predate configuration of the hook.
 
-The executable receives a versioned JSON request on stdin and the recording
-directory as its working directory. The request identifies the recording,
-combined audio, retained PCM intervals, speaker metadata, and staging paths for
-the canonical transcript outputs. It does not contain the Discord token. The
-exact request and result schemas will be fixed before this slice is implemented.
+The executable receives `transcribe` as its first argument, uses the recording
+directory as its working directory, and receives one protocol-version-1 JSON
+request on stdin:
 
-The bundled default executable is a thin Nightcrew adapter. It submits the
-durable job, waits for Nightcrew's result through Nightcrew's public client
-contract, and writes only to the provided staging paths. A custom absolute
-executable implements the same contract and may use any local or remote
-transcriber. On a successful, valid result Guildscribe atomically publishes
-`transcript.json` and `transcript.txt`; on failure it retains the audio and
-durable transcription state, including PCM intervals, for inspection or retry.
-Successful transcript publication also leaves the PCM payloads unchanged.
-Guildscribe does not create FLAC, WAV, or consolidated per-speaker tracks.
+```json
+{
+  "version": 1,
+  "protocolVersion": 1,
+  "recording": {
+    "recordingID": "...",
+    "guildID": "...",
+    "channelID": "...",
+    "startedAt": "2026-11-05T12:00:00.000Z",
+    "endedAt": "2026-11-05T12:30:00.000Z",
+    "durationMs": 1800000,
+    "audio": {
+      "mediaType": "audio/mpeg",
+      "path": "/absolute/recording/path/audio.mp3"
+    },
+    "intervals": [
+      {
+        "intervalID": "...",
+        "kind": "speaking",
+        "userID": "...",
+        "username": "speaker",
+        "displayName": "Speaker",
+        "startOffsetMs": 0,
+        "endOffsetMs": 1200,
+        "incomplete": false,
+        "reason": null,
+        "pcmPath": "/absolute/recording/path/intervals/example.pcm",
+        "pcm": {
+          "channels": 2,
+          "encoding": "signed-16-bit-little-endian",
+          "sampleRateHz": 48000
+        }
+      }
+    ]
+  },
+  "output": {
+    "transcriptJSONPath": "/absolute/recording/path/.transcription-staging/transcript.json"
+  }
+}
+```
+
+Connection-gap intervals have `pcmPath` and `pcm` set to `null`. The restricted
+child environment contains ordinary process-location values plus
+`GUILDSCRIBE_HOME` and `GUILDSCRIBE_RECORDING_ID`; it never contains the Discord
+token.
+
+Before exiting successfully, the executable writes this strict result document
+to `output.transcriptJSONPath`:
+
+```json
+{
+  "version": 1,
+  "language": "en",
+  "text": "Readable full transcript.",
+  "segments": [
+    {
+      "startOffsetMs": 0,
+      "endOffsetMs": 1200,
+      "text": "Readable segment text.",
+      "speaker": {
+        "userID": "...",
+        "username": "speaker",
+        "displayName": "Speaker"
+      }
+    }
+  ]
+}
+```
+
+`language` may be `null`; `speaker` is optional and its identity fields may be
+`null`. Segments must have valid nonnegative ranges, be ordered by
+`startOffsetMs`, and remain within the recording duration. Exit code zero is
+accepted only when the staged document exists and passes this schema.
+
+Guildscribe adds `recordingID` and `createdAt`, atomically writes the canonical
+`transcript.json`, derives `transcript.txt` from `text`, then persists status
+`complete`. A nonzero exit, spawn failure, missing result, or invalid result
+persists status `failed`. Graceful daemon shutdown returns an in-flight job to
+`pending`. Audio, interval sidecars, and PCM are retained for every outcome.
+The worker never creates FLAC, WAV, or consolidated per-speaker tracks.
+
+After durable state is written, Guildscribe emits the best-effort
+`transcription.completed` or `transcription.failed` lifecycle notification when
+configured. Hook stdout and stderr are bounded diagnostics and are not result
+transport.
 
 ## CLI
 
@@ -341,7 +433,8 @@ Diagnostics use stderr. Secrets never appear in output.
 directories under `in-progress`. It returns records ordered by descending
 `startedAt` plus aggregate totals. Each record reports its storage class,
 manifest lifecycle fields, combined-audio byte size, PCM file count and byte
-size, total file count, and total bytes for the entire recording directory.
+size, transcription status, transcript byte sizes, total file count, and total
+bytes for the entire recording directory.
 
 `recordings show <recordingID>` returns the same record shape for one exact
 recording ID. Missing IDs fail with `recording_not_found`; an ID present in
@@ -358,6 +451,7 @@ transcript contents.
   "discordToken": "...",
   "voiceChannelIDs": ["...", "..."],
   "emptyGraceMs": 30000,
+  "transcriptionHook": "/absolute/path/to/transcribe",
   "hooks": {
     "channelJoined": "/absolute/path/to/hook",
     "channelLeft": "/absolute/path/to/hook",
@@ -377,7 +471,7 @@ it. `--dry-run` creates nothing. Initialization does not contact Discord.
 
 1. runtime-home and `.env` existence and restrictive permissions;
 2. valid configuration and writable artifact directories;
-3. executable configured hooks;
+3. executable configured lifecycle and transcription hooks;
 4. `ffmpeg -version`;
 5. `ffprobe -version`;
 6. Discord bot-token authentication;
@@ -414,18 +508,17 @@ must run as the logged-in user and reject root execution.
 
 ## Transcription and Nightcrew boundary
 
-The transcription slice will publish `transcript.json` as the canonical
-versioned document and `transcript.txt` as a readable projection. Speaker is an
-optional transcript-segment field so imported or otherwise unattributed audio
-can still use the format.
+Guildscribe publishes `transcript.json` as the canonical versioned document and
+`transcript.txt` as a readable projection. Speaker is an optional
+transcript-segment field so unattributed results still use the format.
 
 For Discord recordings, Guildscribe passes the retained speaker-attributed PCM
 intervals and their meeting-relative timing to the configured transcription
-hook. The default hook submits a durable job to Nightcrew.
-Nightcrew owns the shared llama.cpp router, the `granite.audio` inference lane,
-model loading and unloading, request priority, and desktop-presence gating.
-Unknown or unhealthy presence fails closed in Nightcrew; a returning user stops
-Granite work at a recoverable chunk boundary.
+hook. A separately installed hook may submit a durable job to Nightcrew.
+When used, Nightcrew owns the shared llama.cpp router, the `granite.audio`
+inference lane, model loading and unloading, request priority, and
+desktop-presence gating. Unknown or unhealthy presence fails closed in
+Nightcrew; a returning user stops Granite work at a recoverable chunk boundary.
 
 Guildscribe remains the source of truth for recording identity, Discord speaker
 metadata, transcript status, and published transcript files. Neither Nightcrew
@@ -434,11 +527,10 @@ hook returns structured text and timing results through the staging contract;
 Guildscribe validates and promotes them atomically, then emits transcription
 lifecycle hooks only after the corresponding state is durable.
 
-The hook request schema, Nightcrew client transport, job-resumption contract,
-and exact result schema remain to be specified before implementation.
-Guildscribe must continue recording when Nightcrew or a custom hook is absent,
-stopped, busy, or unhealthy; transcription stays pending, failed, or disabled
-without invalidating the audio artifact.
+Nightcrew client transport and its own job-resumption behavior belong to the
+external adapter. Guildscribe continues recording when Nightcrew or a custom
+hook is absent, stopped, busy, or unhealthy; transcription stays pending,
+failed, or disabled without invalidating the audio artifact.
 
 No reasoning stage follows transcription.
 
@@ -453,4 +545,11 @@ No reasoning stage follows transcription.
 - A completed meeting produces a validated, playable combined MP3.
 - Restarting during capture retains and renders the captured portion.
 - Recording hooks cannot invalidate completed media.
+- An omitted transcription hook leaves capture fully functional and creates no
+  transcription state.
+- A configured transcription hook receives combined audio, retained PCM,
+  timing, and optional speaker identity through the versioned request.
+- Pending or interrupted transcription survives restart, while failed work
+  remains inspectable and is not retried automatically.
+- Valid staged output publishes canonical JSON and text without deleting PCM.
 - No SQLite database or runtime dependency is created.

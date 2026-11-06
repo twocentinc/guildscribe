@@ -57,6 +57,11 @@ interface RecorderDependencies {
   invokeHook: typeof invokeHook;
 }
 
+type RecordingPublishedHandler = (
+  location: RecordingLocation,
+  manifest: RecordingManifest,
+) => Promise<void>;
+
 const defaultDependencies: RecorderDependencies = {
   joinVoiceChannel,
   waitForVoiceState: (connection, status, timeoutMs) =>
@@ -101,6 +106,7 @@ const copyInterval = (interval: RecordingInterval): RecordingInterval => ({
 export const recoverRecordings = async (
   paths: GuildscribePaths,
   config: GuildscribeConfig,
+  onRecordingPublished: RecordingPublishedHandler = async () => undefined,
 ): Promise<void> => {
   for (const location of await listInProgress(paths)) {
     let manifest: RecordingManifest;
@@ -123,6 +129,12 @@ export const recoverRecordings = async (
           published,
           manifest,
         );
+        await onRecordingPublished(published, manifest).catch((error) => {
+          diagnostic("error", "transcription.enqueueFailed", {
+            recordingID: manifest.recordingID,
+            error: sanitizeError(error),
+          });
+        });
         continue;
       }
       const intervals = await loadIntervals(location);
@@ -160,6 +172,12 @@ export const recoverRecordings = async (
         published,
         manifest,
       );
+      await onRecordingPublished(published, manifest).catch((error) => {
+        diagnostic("error", "transcription.enqueueFailed", {
+          recordingID: manifest.recordingID,
+          error: sanitizeError(error),
+        });
+      });
     } catch (error) {
       manifest.status = "failed";
       manifest.interrupted = true;
@@ -179,6 +197,7 @@ export class GuildscribeRecorder {
   private readonly config: GuildscribeConfig;
   private readonly paths: GuildscribePaths;
   private readonly dependencies: RecorderDependencies;
+  private readonly onRecordingPublished: RecordingPublishedHandler;
   private recording: ActiveRecording | null = null;
   private connection: VoiceConnection | null = null;
   private connectionAnnounced = false;
@@ -195,11 +214,14 @@ export class GuildscribeRecorder {
     config: GuildscribeConfig;
     paths: GuildscribePaths;
     dependencies?: Partial<RecorderDependencies>;
+    onRecordingPublished?: RecordingPublishedHandler;
   }) {
     this.client = options.client;
     this.config = options.config;
     this.paths = options.paths;
     this.dependencies = { ...defaultDependencies, ...options.dependencies };
+    this.onRecordingPublished =
+      options.onRecordingPublished ?? (async () => undefined);
   }
 
   public async initialize(): Promise<void> {
@@ -699,6 +721,14 @@ export class GuildscribeRecorder {
         "recording.completed",
         published,
         active.manifest,
+      );
+      await this.onRecordingPublished(published, active.manifest).catch(
+        (error: unknown) => {
+          diagnostic("error", "transcription.enqueueFailed", {
+            recordingID: active.manifest.recordingID,
+            error: sanitizeError(error),
+          });
+        },
       );
     } catch (error) {
       active.manifest.status = "failed";
