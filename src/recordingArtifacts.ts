@@ -304,8 +304,8 @@ export const exportRecording = async (
   const sourceFiles = (await collectRecordingFiles(discovered.location.directory))
     .filter(
       ({ relativePath }) =>
-        relativePath !== ".transcription-staging" &&
-        !relativePath.startsWith(`.transcription-staging${path.sep}`),
+        relativePath !== ".transcript.json.pending" &&
+        !relativePath.startsWith(".transcript.json.pending."),
     )
     .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
   const plannedFiles = sourceFiles.map(({ relativePath }) => relativePath);

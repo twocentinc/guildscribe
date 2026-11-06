@@ -35,6 +35,7 @@ export interface GuildscribePaths {
   launchdStdoutLog: string;
   launchdStderrLog: string;
   lock: string;
+  runtimeState: string;
 }
 
 export interface HookConfiguration {
@@ -94,6 +95,7 @@ export const getPaths = (home: string): GuildscribePaths => ({
   launchdStdoutLog: path.join(home, "logs", "launchd.stdout.log"),
   launchdStderrLog: path.join(home, "logs", "launchd.stderr.log"),
   lock: path.join(home, "guildscribe.lock"),
+  runtimeState: path.join(home, "runtime.json"),
 });
 
 const readStdin = async (): Promise<string> => {

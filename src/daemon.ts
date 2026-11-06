@@ -12,15 +12,19 @@ import {
 import { GuildscribeRecorder, recoverRecordings } from "./recording.js";
 import { TranscriptionWorker } from "./transcription.js";
 import {
+  DAEMON_HEARTBEAT_INTERVAL_MS,
   daemonLockText,
   parseDaemonLock,
   processIsAlive,
+  type DaemonRuntimeState,
+  writeDaemonRuntimeState,
 } from "./status.js";
 
 const acquireLock = async (
   paths: GuildscribePaths,
+  startedAt: Date,
 ): Promise<() => Promise<void>> => {
-  const contents = daemonLockText();
+  const contents = daemonLockText(process.pid, startedAt);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const handle = await open(paths.lock, "wx", 0o600);
@@ -65,7 +69,8 @@ export const runDaemon = async (
 ): Promise<never> => {
   await mkdir(paths.logs, { recursive: true, mode: 0o700 });
   configureDiagnosticFile(paths.daemonLog);
-  const releaseLock = await acquireLock(paths);
+  const daemonStartedAt = new Date();
+  const releaseLock = await acquireLock(paths, daemonStartedAt);
   const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
   });
@@ -78,11 +83,54 @@ export const runDaemon = async (
       transcription.enqueue(location, manifest).then(() => undefined),
   });
   let shuttingDown = false;
+  let runtimeState: DaemonRuntimeState["state"] = "starting";
+  let discordReady = false;
+  let lastError: string | null = null;
+
+  const persistRuntimeState = async (): Promise<void> => {
+    await writeDaemonRuntimeState(paths, {
+      version: 1,
+      pid: process.pid,
+      startedAt: daemonStartedAt.toISOString(),
+      updatedAt: new Date().toISOString(),
+      state: runtimeState,
+      discordReady,
+      lastError,
+    });
+  };
+
+  const updateRuntimeState = async (
+    state: DaemonRuntimeState["state"],
+    ready: boolean,
+    error: string | null = null,
+  ): Promise<void> => {
+    runtimeState = state;
+    discordReady = ready;
+    lastError = error;
+    await persistRuntimeState();
+  };
+
+  const heartbeat = setInterval(() => {
+    void persistRuntimeState().catch((error: unknown) => {
+      diagnostic("error", "daemon.heartbeatFailed", {
+        error: sanitizeError(error),
+      });
+    });
+  }, DAEMON_HEARTBEAT_INTERVAL_MS);
+  heartbeat.unref();
 
   const shutdown = async (signal: string, exitCode: number): Promise<never> => {
     if (shuttingDown) return new Promise<never>(() => undefined);
     shuttingDown = true;
+    clearInterval(heartbeat);
     diagnostic("info", "daemon.stopping", { signal });
+    await updateRuntimeState("stopping", false, lastError).catch(
+      (error: unknown) => {
+        diagnostic("error", "daemon.heartbeatFailed", {
+          error: sanitizeError(error),
+        });
+      },
+    );
     await recorder.shutdown().catch((error: unknown) => {
       diagnostic("error", "daemon.recorderShutdownFailed", {
         error: sanitizeError(error),
@@ -108,14 +156,48 @@ export const runDaemon = async (
   client.on(Events.VoiceStateUpdate, (oldState, newState) => {
     recorder.handleVoiceStateUpdate(oldState, newState);
   });
-  client.on(Events.ShardResume, () => recorder.handleGatewayResume());
+  client.on(Events.ShardResume, () => {
+    recorder.handleGatewayResume();
+    if (!shuttingDown) {
+      void updateRuntimeState("ready", true).catch((error: unknown) => {
+        diagnostic("error", "daemon.heartbeatFailed", {
+          error: sanitizeError(error),
+        });
+      });
+    }
+  });
+  client.on(Events.ShardDisconnect, (event) => {
+    const error = sanitizeError(
+      new Error(`Discord gateway disconnected: ${event.code} ${event.reason}`),
+    );
+    diagnostic("warn", "discord.shardDisconnected", { error });
+    if (!shuttingDown) {
+      void updateRuntimeState("degraded", false, error).catch(
+        (writeError: unknown) => {
+          diagnostic("error", "daemon.heartbeatFailed", {
+            error: sanitizeError(writeError),
+          });
+        },
+      );
+    }
+  });
   client.on(Events.Error, (error) => {
-    diagnostic("error", "discord.clientError", {
-      error: sanitizeError(error, [config.discordToken]),
+    const message = sanitizeError(error, [config.discordToken]);
+    diagnostic("error", "discord.clientError", { error: message });
+    lastError = message;
+    if (!client.isReady() && !shuttingDown) {
+      runtimeState = "degraded";
+      discordReady = false;
+    }
+    void persistRuntimeState().catch((writeError: unknown) => {
+      diagnostic("error", "daemon.heartbeatFailed", {
+        error: sanitizeError(writeError),
+      });
     });
   });
 
   try {
+    await persistRuntimeState();
     await transcription.recover();
     await recoverRecordings(paths, config, (location, manifest) =>
       transcription.enqueue(location, manifest).then(() => undefined),
@@ -132,7 +214,14 @@ export const runDaemon = async (
       voiceChannelIDs: config.voiceChannelIDs,
     });
     await recorder.initialize();
+    await updateRuntimeState("ready", true);
   } catch (error) {
+    clearInterval(heartbeat);
+    await updateRuntimeState(
+      "degraded",
+      false,
+      sanitizeError(error, [config.discordToken]),
+    ).catch(() => undefined);
     await transcription.shutdown().catch(() => undefined);
     client.destroy();
     await releaseLock().catch(() => undefined);

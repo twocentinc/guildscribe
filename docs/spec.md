@@ -35,7 +35,7 @@ The implemented slice:
   portable checksummed exports through agent-safe JSON commands;
 - invokes optional local executable hooks for recording events; and
 - durably queues one optional transcription executable at a time, validates its
-  staged result, and publishes canonical transcript files; and
+  pending result, and publishes canonical transcript files; and
 - packages as an npm CLI and provides macOS startup, upgrade, and uninstall
   workflows that preserve runtime data.
 
@@ -147,6 +147,7 @@ another home for every command.
 ~/.guildscribe/
   .env
   guildscribe.lock
+  runtime.json
   logs/
     daemon.jsonl
     daemon.jsonl.1
@@ -176,7 +177,11 @@ another home for every command.
 ```
 
 `guildscribe.lock` exists only while the daemon is running and contains a
-versioned JSON record with its process ID and start time. Completed raw PCM
+versioned JSON record with its process ID and start time. `runtime.json` is an
+owner-only atomic heartbeat containing daemon phase, Discord readiness, update
+time, and the last sanitized runtime error. The daemon refreshes it every 10
+seconds; a live lock with no matching heartbeat within 30 seconds is stale.
+Completed raw PCM
 files and their JSON interval sidecars remain permanently with the published
 recording so speaker audio, identity, timing, and capture gaps stay inspectable
 and available to optional processing.
@@ -255,8 +260,8 @@ meeting metadata, not a transcript and not a replacement for interval timing.
 `transcription.json` records the independent worker state, attempt count,
 timestamps, and sanitized failure. `transcript.json` contains the validated
 version-1 transcript document; `transcript.txt` is its readable text projection.
-The temporary `.transcription-staging` directory is removed after successful
-publication and may remain after failure for inspection.
+The `.transcript.json.pending` response is atomically renamed after successful
+validation and may remain after failure for inspection.
 
 ## Recording lifecycle
 
@@ -348,62 +353,27 @@ Daemon startup requeues `pending` work and converts an interrupted `running`
 state back to `pending`. It does not automatically retry `failed` work or
 retroactively enqueue recordings that predate configuration of the hook.
 
-The executable receives `transcribe` as its first argument, uses the recording
-directory as its working directory, and receives one protocol-version-1 JSON
-request on stdin:
+Guildscribe invokes the executable with exactly one positional argument:
 
-```json
-{
-  "version": 1,
-  "protocolVersion": 1,
-  "recording": {
-    "recordingID": "...",
-    "guildID": "...",
-    "channelID": "...",
-    "startedAt": "2026-11-05T12:00:00.000Z",
-    "endedAt": "2026-11-05T12:30:00.000Z",
-    "durationMs": 1800000,
-    "audio": {
-      "mediaType": "audio/mpeg",
-      "path": "/absolute/recording/path/audio.mp3"
-    },
-    "intervals": [
-      {
-        "intervalID": "...",
-        "kind": "speaking",
-        "userID": "...",
-        "username": "speaker",
-        "displayName": "Speaker",
-        "startOffsetMs": 0,
-        "endOffsetMs": 1200,
-        "incomplete": false,
-        "reason": null,
-        "pcmPath": "/absolute/recording/path/intervals/example.pcm",
-        "pcm": {
-          "channels": 2,
-          "encoding": "signed-16-bit-little-endian",
-          "sampleRateHz": 48000
-        }
-      }
-    ]
-  },
-  "output": {
-    "transcriptJSONPath": "/absolute/recording/path/.transcription-staging/transcript.json"
-  }
-}
+```text
+/absolute/path/to/transcription-hook /absolute/path/to/recording
 ```
 
-Connection-gap intervals have `pcmPath` and `pcm` set to `null`. The restricted
-child environment contains ordinary process-location values plus
-`GUILDSCRIBE_HOME` and `GUILDSCRIBE_RECORDING_ID`; it never contains the Discord
-token.
+The recording directory is also the child working directory. The executable
+receives no request document on stdin. It discovers inputs through the durable
+recording layout: `recording.json`, `participants.json`, `audio.mp3`, and the
+JSON/PCM pairs below `intervals/`.
 
-Before exiting successfully, the executable writes this strict result document
-to `output.transcriptJSONPath`:
+The restricted child environment contains only ordinary process-location
+values and never contains the Discord token. Before exiting successfully, the
+executable atomically writes this complete result document to
+`.transcript.json.pending`:
 
 ```json
 {
   "version": 1,
+  "recordingID": "...",
+  "createdAt": "2026-11-05T12:30:01.000Z",
   "language": "en",
   "text": "Readable full transcript.",
   "segments": [
@@ -421,14 +391,20 @@ to `output.transcriptJSONPath`:
 }
 ```
 
-`language` may be `null`; `speaker` is optional and its identity fields may be
-`null`. Segments must have valid nonnegative ranges, be ordered by
-`startOffsetMs`, and remain within the recording duration. Exit code zero is
-accepted only when the staged document exists and passes this schema.
+`recordingID` must match `recording.json`. `language` may be `null`; `speaker`
+is optional and its identity fields may be `null`. Segments must have valid
+nonnegative ranges, be ordered by `startOffsetMs`, and remain within the
+recording duration. Exit code zero is accepted only when the pending document
+exists and passes this Zod-enforced schema.
 
-Guildscribe adds `recordingID` and `createdAt`, atomically writes the canonical
+The pending document is the hook's response; stdout and stderr are bounded
+diagnostics only. The hook must not write canonical `transcript.json`,
+`transcript.txt`, or `transcription.json` files. After the hook exits zero,
+Guildscribe validates the completed file once, atomically renames it to
 `transcript.json`, derives `transcript.txt` from `text`, then persists status
-`complete`. A nonzero exit, spawn failure, missing result, or invalid result
+`complete`. The hook must remain running until its atomic write is complete;
+Guildscribe does not poll an invalid file indefinitely. A nonzero exit, spawn
+failure, missing result, or invalid result
 persists status `failed`. Graceful daemon shutdown returns an in-flight job to
 `pending`. Audio, interval sidecars, and PCM are retained for every outcome.
 The worker never creates FLAC, WAV, or consolidated per-speaker tracks.
@@ -502,12 +478,15 @@ transcript contents.
 
 ### Operational status
 
-`guildscribe status` reads durable state and reports daemon liveness and
-uptime, the configured channel allowlist, whether transcription is enabled,
-the active recording and any empty-channel grace deadline, the latest
-published recording, and aggregate storage totals. It never contacts Discord,
-returns the token, or mutates state. A stale or malformed lock is reported as
-not running rather than treated as proof that a daemon exists.
+`guildscribe status` reads durable state and reports daemon liveness, uptime,
+heartbeat time, Discord readiness, last sanitized runtime error, and one health
+classification: `stopped`, `starting`, `ready`, `recording`, `degraded`,
+`stopping`, or `stale`. It also reports the configured channel allowlist,
+whether transcription is enabled, the active recording and any empty-channel
+grace deadline, the latest published recording, and aggregate storage totals.
+It never contacts Discord, returns the token, or mutates state. A malformed
+lock is not proof that a daemon exists; a live lock without a current,
+PID-matched heartbeat is `stale`.
 
 ### Recording verification and export
 
@@ -519,7 +498,7 @@ digests for every durable file. Failed checks make the command envelope
 unsuccessful without changing the recording.
 
 `recordings export` copies one recording into a new absolute destination and
-writes `checksums.sha256`. It excludes transient transcription staging and
+writes `checksums.sha256`. It excludes pending transcription responses and
 never changes the source recording. The destination must not already exist or
 be inside the source. `--dry-run` returns the plan without writing. `--wav`
 uses the mandatory FFmpeg installation to add a portable PCM WAV copy; WAV is
@@ -624,9 +603,10 @@ Guildscribe publishes `transcript.json` as the canonical versioned document and
 `transcript.txt` as a readable projection. Speaker is an optional
 transcript-segment field so unattributed results still use the format.
 
-For Discord recordings, Guildscribe passes the retained speaker-attributed PCM
-intervals and their meeting-relative timing to the configured transcription
-hook. A separately installed hook may submit a durable job to Nightcrew.
+For Discord recordings, Guildscribe passes the recording-directory path to the
+configured transcription hook. The hook can read retained speaker-attributed
+PCM intervals and their meeting-relative timing from that directory. A
+separately installed hook may submit a durable job to Nightcrew.
 When used, Nightcrew owns the shared llama.cpp router, the `granite.audio`
 inference lane, model loading and unloading, request priority, and
 desktop-presence gating. Unknown or unhealthy presence fails closed in
@@ -635,9 +615,10 @@ Nightcrew; a returning user stops Granite work at a recoverable chunk boundary.
 Guildscribe remains the source of truth for recording identity, Discord speaker
 metadata, transcript status, and published transcript files. Neither Nightcrew
 nor a custom hook may publish directly over canonical files. The configured
-hook returns structured text and timing results through the staging contract;
-Guildscribe validates and promotes them atomically, then emits transcription
-lifecycle hooks only after the corresponding state is durable.
+hook returns structured text and timing results through the pending-file
+contract. Guildscribe validates and promotes that response atomically, then
+emits transcription lifecycle hooks only after the corresponding state is
+durable.
 
 Nightcrew client transport and its own job-resumption behavior belong to the
 external adapter. Guildscribe continues recording when Nightcrew or a custom
@@ -666,11 +647,11 @@ No reasoning stage follows transcription.
 - Export creates a checksummed portable copy without changing its source.
 - An omitted transcription hook leaves capture fully functional and creates no
   transcription state.
-- A configured transcription hook receives combined audio, retained PCM,
-  timing, and optional speaker identity through the versioned request.
+- A configured transcription hook receives the recording directory and can
+  discover combined audio, retained PCM, timing, and optional speaker identity.
 - Pending or interrupted transcription survives restart, while failed work
   remains inspectable and is not retried automatically.
-- Valid staged output publishes canonical JSON and text without deleting PCM.
+- Valid pending output publishes canonical JSON and text without deleting PCM.
 - The packed npm CLI excludes source and build tooling, installs with lifecycle
   scripts disabled, and returns valid JSON version and help envelopes.
 - No SQLite database or runtime dependency is created.

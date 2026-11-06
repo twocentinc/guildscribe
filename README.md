@@ -15,8 +15,8 @@ The first working slice provides:
 
 - `guildscribe init` for owner-only `.env` configuration;
 - `guildscribe doctor` for local tools and live Discord validation;
-- `guildscribe status` and `guildscribe config show|update` for safe recorder
-  operations;
+- `guildscribe status` with durable daemon/Discord health, plus
+  `guildscribe config show|update` for safe recorder operations;
 - `guildscribe recordings list|show|verify|export` for JSON inventories,
   integrity checks, and portable checksummed copies;
 - `guildscribe daemon run` for automatic voice-channel recording;
@@ -102,8 +102,10 @@ request:
 }
 ```
 
-After publication, Guildscribe invokes the hook outside the capture loop and
-passes a versioned JSON request on stdin. See
+After publication, Guildscribe invokes the hook outside the capture loop with
+the recording directory as its only argument. The hook atomically writes the
+complete result to `.transcript.json.pending`; Guildscribe validates it with
+Zod and publishes it as `transcript.json`. See
 [the specification](docs/spec.md#transcription-hook) for the exact contract.
 
 The default runtime home is `~/.guildscribe`. Use `--home <absolute-path>` for

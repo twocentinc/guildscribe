@@ -142,10 +142,19 @@ section so it can be copied without carrying Guildscribe behavior with it.
 - `guildscribe startup` owns per-user LaunchAgent management. Never require
   root, put credentials in a plist, or delete runtime data during uninstall.
 - Store daemon and launchd logs below the selected Guildscribe runtime home.
+- Keep daemon health in an owner-only, atomically replaced runtime heartbeat.
+  Status must treat a missing, malformed, PID-mismatched, or expired heartbeat
+  for a live lock as stale rather than healthy.
 - Recording must not depend on transcription availability.
 - Keep the transcription hook separate from best-effort lifecycle event hooks.
   Run it outside the capture loop only after completed audio is durable, and
   retain enough state to recover pending work after restart.
+- Invoke the transcription executable with the absolute recording directory as
+  its sole argument and working directory. It receives no structured stdin.
+  Require it to atomically write the complete `.transcript.json.pending` and
+  exit zero; Guildscribe validates that response with Zod and promotes it.
+  Never let an external hook own canonical transcript or transcription-state
+  files.
 - Retain interval PCM permanently with the completed recording, regardless of
   whether transcription is enabled or succeeds. Rendering and processing must
   never delete captured PCM.

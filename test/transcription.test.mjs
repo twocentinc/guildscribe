@@ -4,6 +4,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   rm,
   stat,
   writeFile,
@@ -90,13 +91,19 @@ const prepareRecording = async (hookSource) => {
 };
 
 const successHook = `
-import { writeFile } from "node:fs/promises";
-let input = "";
-for await (const chunk of process.stdin) input += chunk;
-const request = JSON.parse(input);
-await writeFile("hook-request.json", JSON.stringify({ argument: process.argv[2], request }));
-await writeFile(request.output.transcriptJSONPath, JSON.stringify({
+import { readFile, rename, writeFile } from "node:fs/promises";
+import path from "node:path";
+const recordingDirectory = process.argv[2];
+const recording = JSON.parse(await readFile(path.join(recordingDirectory, "recording.json"), "utf8"));
+await writeFile("hook-request.json", JSON.stringify({
+  recordingDirectory,
+  workingDirectory: process.cwd()
+}));
+const temporary = path.join(recordingDirectory, ".transcript.json.pending.tmp");
+await writeFile(temporary, JSON.stringify({
   version: 1,
+  recordingID: recording.recordingID,
+  createdAt: "2026-11-05T12:00:02.000Z",
   language: "en",
   text: "hello world",
   segments: [
@@ -109,6 +116,7 @@ await writeFile(request.output.transcriptJSONPath, JSON.stringify({
     }
   ]
 }));
+await rename(temporary, path.join(recordingDirectory, ".transcript.json.pending"));
 `;
 
 test("transcription hook publishes validated transcripts and retains PCM", async () => {
@@ -129,6 +137,7 @@ test("transcription hook publishes validated transcripts and retains PCM", async
     );
     assert.equal(transcript.version, 1);
     assert.equal(transcript.recordingID, fixture.active.manifest.recordingID);
+    assert.equal(transcript.createdAt, "2026-11-05T12:00:02.000Z");
     assert.equal(transcript.segments[0].speaker, undefined);
     assert.equal(transcript.segments[1].speaker.displayName, "Speaker");
     assert.equal(
@@ -151,13 +160,14 @@ test("transcription hook publishes validated transcripts and retains PCM", async
     const captured = JSON.parse(
       await readFile(path.join(fixture.location.directory, "hook-request.json"), "utf8"),
     );
-    assert.equal(captured.argument, "transcribe");
-    assert.equal(captured.request.version, 1);
-    assert.equal(captured.request.recording.intervals.length, 1);
-    assert.equal(captured.request.recording.intervals[0].pcm.sampleRateHz, 48_000);
+    assert.equal(captured.recordingDirectory, fixture.location.directory);
+    assert.equal(
+      await realpath(captured.workingDirectory),
+      await realpath(fixture.location.directory),
+    );
     assert.doesNotMatch(JSON.stringify(captured), /must-not-be-exposed/);
     await assert.rejects(
-      stat(path.join(fixture.location.directory, ".transcription-staging")),
+      stat(path.join(fixture.location.directory, ".transcript.json.pending")),
       { code: "ENOENT" },
     );
   } finally {
@@ -189,13 +199,12 @@ test("failed transcription remains inspectable without deleting audio", async ()
   }
 });
 
-test("invalid staged transcript is rejected", async () => {
+test("invalid pending transcript is rejected", async () => {
   const fixture = await prepareRecording(`
 import { writeFile } from "node:fs/promises";
-let input = "";
-for await (const chunk of process.stdin) input += chunk;
-const request = JSON.parse(input);
-await writeFile(request.output.transcriptJSONPath, JSON.stringify({ version: 1, text: "missing fields" }));
+import path from "node:path";
+const recordingDirectory = process.argv[2];
+await writeFile(path.join(recordingDirectory, ".transcript.json.pending"), JSON.stringify({ version: 1, text: "missing fields" }));
 `);
   try {
     const worker = new TranscriptionWorker(fixture.paths, fixture.config);

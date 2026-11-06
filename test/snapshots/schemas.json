@@ -1401,6 +1401,36 @@
       "daemon": {
         "additionalProperties": false,
         "properties": {
+          "discordReady": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "health": {
+            "enum": [
+              "stopped",
+              "starting",
+              "ready",
+              "recording",
+              "degraded",
+              "stopping",
+              "stale"
+            ],
+            "type": "string"
+          },
+          "heartbeatAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "pid": {
             "anyOf": [
               {
@@ -1430,10 +1460,14 @@
           }
         },
         "required": [
+          "health",
           "running",
           "pid",
           "startedAt",
-          "uptimeMs"
+          "uptimeMs",
+          "heartbeatAt",
+          "discordReady",
+          "lastError"
         ],
         "type": "object"
       },
@@ -1655,7 +1689,7 @@
         "type": "number"
       },
       "schemaVersion": {
-        "const": 1,
+        "const": 2,
         "type": "number"
       },
       "version": {

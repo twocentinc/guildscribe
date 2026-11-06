@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1;
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const EXIT_CODES = {
   success: 0,
@@ -257,10 +257,22 @@ const recordingExportResultSchema = z.union([
 ]);
 const runtimeStatusResultSchema = z.object({
   daemon: z.object({
+    health: z.enum([
+      "stopped",
+      "starting",
+      "ready",
+      "recording",
+      "degraded",
+      "stopping",
+      "stale",
+    ]),
     running: z.boolean(),
     pid: z.number().int().nullable(),
     startedAt: z.string().nullable(),
     uptimeMs: z.number().nullable(),
+    heartbeatAt: z.string().nullable(),
+    discordReady: z.boolean().nullable(),
+    lastError: z.string().nullable(),
   }),
   configuration: z.object({
     voiceChannelIDs: z.array(snowflakeSchema),

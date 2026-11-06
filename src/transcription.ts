@@ -2,7 +2,6 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { open } from "node:fs/promises";
 import {
-  mkdir,
   readFile,
   readdir,
   rename,
@@ -14,16 +13,13 @@ import { z } from "zod";
 import type { GuildscribeConfig, GuildscribePaths } from "./config.js";
 import { invokeHook } from "./hooks.js";
 import {
-  intervalPCMPath,
-  loadIntervals,
   locationForDirectory,
   readManifest,
   writeJSON,
-  type RecordingInterval,
   type RecordingLocation,
   type RecordingManifest,
 } from "./recording.js";
-import { diagnostic, PROTOCOL_VERSION, sanitizeError } from "./protocol.js";
+import { diagnostic, sanitizeError } from "./protocol.js";
 
 export type TranscriptionStatus =
   | "pending"
@@ -77,9 +73,11 @@ const transcriptSegmentSchema = z
     message: "endOffsetMs must be greater than or equal to startOffsetMs",
   });
 
-export const transcriptionOutputSchema = z
+export const transcriptDocumentSchema = z
   .object({
     version: z.literal(1),
+    recordingID: z.string().min(1),
+    createdAt: z.iso.datetime(),
     language: z.string().min(1).nullable(),
     text: z.string(),
     segments: z.array(transcriptSegmentSchema),
@@ -103,18 +101,13 @@ export const transcriptionOutputSchema = z
     }
   });
 
-export type TranscriptionOutput = z.infer<typeof transcriptionOutputSchema>;
-
-export interface TranscriptDocument extends TranscriptionOutput {
-  recordingID: string;
-  createdAt: string;
-}
+export type TranscriptDocument = z.infer<typeof transcriptDocumentSchema>;
 
 const statePathFor = (location: RecordingLocation): string =>
   path.join(location.directory, "transcription.json");
 
-const stagingDirectoryFor = (location: RecordingLocation): string =>
-  path.join(location.directory, ".transcription-staging");
+const pendingTranscriptPathFor = (location: RecordingLocation): string =>
+  path.join(location.directory, ".transcript.json.pending");
 
 const readJSON = async (candidate: string): Promise<unknown> =>
   JSON.parse(await readFile(candidate, "utf8")) as unknown;
@@ -194,29 +187,6 @@ const publishedLocations = async (
     left.directory.localeCompare(right.directory),
   );
 };
-
-const intervalRequest = (
-  location: RecordingLocation,
-  interval: RecordingInterval,
-) => ({
-  intervalID: interval.intervalID,
-  kind: interval.kind,
-  userID: interval.userID,
-  username: interval.username,
-  displayName: interval.displayName,
-  startOffsetMs: interval.startOffsetMs,
-  endOffsetMs: interval.endOffsetMs,
-  incomplete: interval.incomplete,
-  reason: interval.reason,
-  pcmPath: intervalPCMPath(location, interval),
-  pcm: interval.pcmFile
-    ? {
-        channels: 2,
-        encoding: "signed-16-bit-little-endian",
-        sampleRateHz: 48_000,
-      }
-    : null,
-});
 
 interface HookRunResult {
   code: number | null;
@@ -346,40 +316,12 @@ export class TranscriptionWorker {
     state.error = null;
     await writeTranscriptionState(location, state);
 
-    const stagingDirectory = stagingDirectoryFor(location);
-    const stagingTranscript = path.join(stagingDirectory, "transcript.json");
-    await rm(stagingDirectory, { recursive: true, force: true });
-    await mkdir(stagingDirectory, { recursive: true, mode: 0o700 });
+    const pendingTranscript = pendingTranscriptPathFor(location);
+    await rm(pendingTranscript, { force: true });
 
     try {
       if (!manifest.audioFile) throw new Error("Recording has no audio file");
-      const intervals = await loadIntervals(location);
-      const request = {
-        version: 1,
-        protocolVersion: PROTOCOL_VERSION,
-        recording: {
-          recordingID: manifest.recordingID,
-          guildID: manifest.guildID,
-          channelID: manifest.channelID,
-          startedAt: manifest.startedAt,
-          endedAt: manifest.endedAt,
-          durationMs: manifest.durationMs,
-          audio: {
-            mediaType: "audio/mpeg",
-            path: path.join(
-              location.directory,
-              path.basename(manifest.audioFile),
-            ),
-          },
-          intervals: intervals.map((interval) =>
-            intervalRequest(location, interval),
-          ),
-        },
-        output: {
-          transcriptJSONPath: stagingTranscript,
-        },
-      };
-      const result = await this.runHook(location, request);
+      const result = await this.runHook(location);
       diagnostic(
         result.code === 0 ? "debug" : "warn",
         "transcription.hookFinished",
@@ -397,40 +339,37 @@ export class TranscriptionWorker {
             `Transcription hook exited with code ${String(result.code)}${result.signal ? ` (${result.signal})` : ""}`,
         );
       }
-      const output = transcriptionOutputSchema.parse(
-        await readJSON(stagingTranscript),
+      const transcript = transcriptDocumentSchema.parse(
+        await readJSON(pendingTranscript),
       );
+      if (transcript.recordingID !== manifest.recordingID) {
+        throw new Error("Transcript recordingID does not match recording.json");
+      }
       const durationMs = manifest.durationMs;
       if (
         durationMs !== null &&
-        output.segments.some(
+        transcript.segments.some(
           (segment) => segment.endOffsetMs > durationMs,
         )
       ) {
         throw new Error("Transcript segment exceeds the recording duration");
       }
-      const transcript: TranscriptDocument = {
-        ...output,
-        recordingID: manifest.recordingID,
-        createdAt: new Date().toISOString(),
-      };
-      await writeJSON(
+      await rename(
+        pendingTranscript,
         path.join(location.directory, "transcript.json"),
-        transcript,
       );
       await atomicWriteText(
         path.join(location.directory, "transcript.txt"),
-        `${output.text.replace(/\s+$/, "")}\n`,
+        `${transcript.text.replace(/\s+$/, "")}\n`,
       );
 
       state.status = "complete";
       state.completedAt = new Date().toISOString();
       state.error = null;
       await writeTranscriptionState(location, state);
-      await rm(stagingDirectory, { recursive: true, force: true });
       diagnostic("info", "transcription.completed", {
         recordingID: manifest.recordingID,
-        segmentCount: output.segments.length,
+        segmentCount: transcript.segments.length,
       });
       void invokeHook(
         this.paths,
@@ -475,18 +414,13 @@ export class TranscriptionWorker {
 
   private runHook(
     location: RecordingLocation,
-    request: Record<string, unknown>,
   ): Promise<HookRunResult> {
     const executable = this.config.transcriptionHook;
     if (!executable) throw new Error("Transcription hook is not configured");
     return new Promise((resolve, reject) => {
-      const child = spawn(executable, ["transcribe"], {
+      const child = spawn(executable, [location.directory], {
         cwd: location.directory,
         env: {
-          GUILDSCRIBE_HOME: this.paths.home,
-          GUILDSCRIBE_RECORDING_ID: String(
-            (request.recording as { recordingID: string }).recordingID,
-          ),
           HOME: process.env.HOME,
           LANG: process.env.LANG,
           PATH: process.env.PATH,
@@ -513,7 +447,7 @@ export class TranscriptionWorker {
         if (this.child === child) this.child = null;
         resolve({ code, signal, stdout: stdout.trim(), stderr: stderr.trim() });
       });
-      child.stdin.end(`${JSON.stringify(request)}\n`);
+      child.stdin.end();
     });
   }
 }

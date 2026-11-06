@@ -31,6 +31,8 @@ test("status and configuration commands emit redacted JSON envelopes", async () 
     const status = runCLI(["--home", home, "status"]);
     assert.equal(status.ok, true);
     assert.equal(status.result.daemon.running, false);
+    assert.equal(status.result.daemon.health, "stopped");
+    assert.equal(status.result.daemon.discordReady, null);
     assert.deepEqual(status.result.configuration.voiceChannelIDs, [
       "111111111111111111",
     ]);
