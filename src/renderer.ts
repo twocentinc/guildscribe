@@ -67,7 +67,7 @@ export const runCommand = async (
     });
   });
 
-const validateMP3 = async (candidate: string): Promise<number> => {
+export const validateMP3 = async (candidate: string): Promise<number> => {
   const result = await runCommand("ffprobe", [
     "-v",
     "error",

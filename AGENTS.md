@@ -23,7 +23,8 @@ Saratonin so it can be published and installed on its own.
   pipelines.
 - Keep signed 16-bit, 48 kHz stereo PCM intervals as the sole
   speaker-separated processing input. Do not add FLAC, WAV, or per-speaker
-  track generation without a demonstrated requirement.
+  track generation to canonical recordings. A user-requested portable export
+  may include a derived WAV without changing its source.
 - Nightcrew owns llama.cpp routing, model residency, inference scheduling, and
   desktop-presence policy. Guildscribe owns its recording and transcript
   artifacts and must remain usable for capture when Nightcrew is absent.
@@ -62,6 +63,9 @@ Saratonin so it can be published and installed on its own.
   recording. Never join or record more than one channel at a time.
 - `guildscribe doctor` must verify FFmpeg, ffprobe, filesystem health, Discord
   token authentication, channel existence, and required bot permissions.
+- Keep recording verification read-only. Exports must target a new location,
+  include checksums, exclude transient staging data, and leave their source
+  unchanged.
 
 ## Event hooks
 
@@ -101,6 +105,16 @@ Saratonin so it can be published and installed on its own.
   before starting Granite work.
 - Background failures must remain inspectable through manifests and must not
   delete completed recording artifacts.
+
+## Distribution
+
+- Package the compiled CLI, documentation, and operational scripts; never
+  package runtime data or credentials.
+- Verify the actual packed artifact through an isolated install before release.
+- Release artifacts must include a SHA-256 checksum and build-provenance
+  attestation.
+- Upgrade and uninstall workflows must reject root execution and preserve the
+  selected Guildscribe runtime home.
 
 ## Documentation
 

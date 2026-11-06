@@ -82,8 +82,9 @@ const humanMember = (userID, username = "speaker") => ({
 
 const fakeChannel = (channelID, guildID = "444444444444444444") => ({
   id: channelID,
+  name: `channel-${channelID}`,
   type: ChannelType.GuildVoice,
-  guild: { id: guildID, voiceAdapterCreator: {} },
+  guild: { id: guildID, name: "Test Guild", voiceAdapterCreator: {} },
   members: new Collection(),
 });
 
@@ -352,7 +353,25 @@ test("simultaneous Discord Opus streams produce separate PCM and a final MP3", a
     );
     assert.equal(complete.status, "complete");
     assert.equal(complete.channelID, CHANNEL_A);
+    assert.equal(complete.channelName, `channel-${CHANNEL_A}`);
+    assert.equal(complete.guildName, "Test Guild");
     assert.equal(complete.intervalCount, 2);
+    const participants = JSON.parse(
+      await readFile(path.join(published, "participants.json"), "utf8"),
+    );
+    assert.equal(participants.participants.length, 2);
+    assert.deepEqual(
+      participants.participants.map(({ userID }) => userID).sort(),
+      [USER_A, USER_B],
+    );
+    assert.ok(
+      participants.participants.every(
+        ({ sessions, speakingDurationMs }) =>
+          sessions.length === 1 &&
+          sessions[0].leftAt !== null &&
+          speakingDurationMs === 100,
+      ),
+    );
     assert.ok((await stat(path.join(published, "audio.mp3"))).size > 0);
     const publishedPCM = await Promise.all(
       intervals.map((interval) =>

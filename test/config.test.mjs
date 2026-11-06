@@ -11,7 +11,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { getPaths, initializeHome, loadConfig } from "../dist/config.js";
+import {
+  getPaths,
+  initializeHome,
+  loadConfig,
+  redactedConfiguration,
+  updateConfiguration,
+} from "../dist/config.js";
 
 test("initialization writes owner-only configuration and refuses overwrite", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "guildscribe-config-"));
@@ -99,6 +105,66 @@ test("dry-run initialization creates nothing", async () => {
     );
     assert.equal(result.created, false);
     await assert.rejects(stat(home), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("configuration updates are atomic, redacted, and support clearing hooks", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "guildscribe-update-config-"));
+  const paths = getPaths(path.join(root, "home"));
+  try {
+    await initializeHome(
+      paths,
+      {
+        discordToken: "original-secret",
+        voiceChannelIDs: ["123456789012345678"],
+        transcriptionHook: "/usr/bin/true",
+        hooks: { channelJoined: "/usr/bin/true" },
+      },
+      false,
+    );
+    const before = await readFile(paths.env, "utf8");
+    const dryRun = await updateConfiguration(
+      paths,
+      {
+        voiceChannelIDs: ["223456789012345678", "123456789012345678"],
+        transcriptionHook: null,
+        hooks: { channelJoined: null, channelLeft: "/usr/bin/false" },
+      },
+      true,
+    );
+    assert.equal(dryRun.changed, false);
+    assert.equal(dryRun.configuration.discordToken, "[redacted]");
+    assert.equal(dryRun.configuration.transcriptionHook, null);
+    assert.deepEqual(dryRun.configuration.voiceChannelIDs, [
+      "223456789012345678",
+      "123456789012345678",
+    ]);
+    assert.equal(await readFile(paths.env, "utf8"), before);
+
+    const applied = await updateConfiguration(
+      paths,
+      {
+        discordToken: "replacement-secret",
+        voiceChannelIDs: ["223456789012345678", "123456789012345678"],
+        transcriptionHook: null,
+        hooks: { channelJoined: null, channelLeft: "/usr/bin/false" },
+      },
+      false,
+    );
+    assert.equal(applied.changed, true);
+    assert.equal(applied.restartRequired, true);
+    assert.doesNotMatch(JSON.stringify(applied), /replacement-secret/);
+    const config = await loadConfig(paths);
+    assert.equal(config.discordToken, "replacement-secret");
+    assert.equal(config.transcriptionHook, undefined);
+    assert.equal(config.hooks.channelJoined, undefined);
+    assert.equal(config.hooks.channelLeft, "/usr/bin/false");
+    assert.deepEqual(
+      redactedConfiguration(config).voiceChannelIDs,
+      ["223456789012345678", "123456789012345678"],
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

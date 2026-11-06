@@ -4,12 +4,19 @@ import {
   getPaths,
   initializeHome,
   loadConfig,
+  readConfigUpdateRequest,
   readInitRequest,
+  redactedConfiguration,
   resolveHome,
+  updateConfiguration,
 } from "./config.js";
 import { runDaemon } from "./daemon.js";
 import { runDoctor } from "./doctor.js";
 import { listRecordings, showRecording } from "./recordings.js";
+import {
+  exportRecording,
+  verifyRecording,
+} from "./recordingArtifacts.js";
 import {
   createRequestID,
   GuildscribeError,
@@ -28,8 +35,9 @@ import {
   stopStartup,
   uninstallStartup,
 } from "./startup.js";
+import { getRuntimeStatus } from "./status.js";
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 
 interface GlobalOptions {
   home?: string;
@@ -169,6 +177,57 @@ export const runCLI = async (argv = process.argv): Promise<void> => {
       });
     });
 
+  program
+    .command("status")
+    .description("show daemon, recording, and storage status")
+    .action(async (_options, command) => {
+      const globals = globalsFor(command);
+      await runFinite("status", globals, async () => {
+        const paths = getPaths(resolveHome(globals.home));
+        return { result: await getRuntimeStatus(paths) };
+      });
+    });
+
+  const configuration = program
+    .command("config")
+    .description("inspect or update configuration");
+
+  configuration
+    .command("show")
+    .description("show configuration with the Discord token redacted")
+    .action(async (_options, command) => {
+      const globals = globalsFor(command);
+      await runFinite("config show", globals, async () => {
+        const paths = getPaths(resolveHome(globals.home));
+        return { result: redactedConfiguration(await loadConfig(paths)) };
+      });
+    });
+
+  configuration
+    .command("update")
+    .description("atomically update configuration")
+    .requiredOption(
+      "--request <file-or-dash>",
+      "JSON request file or - for stdin",
+    )
+    .option("--dry-run", "validate and preview without writing")
+    .action(
+      async (options: { request: string; dryRun?: boolean }, command) => {
+        const globals = globalsFor(command);
+        await runFinite("config update", globals, async () => {
+          const paths = getPaths(resolveHome(globals.home));
+          const request = await readConfigUpdateRequest(options.request);
+          return {
+            result: await updateConfiguration(
+              paths,
+              request,
+              Boolean(options.dryRun),
+            ),
+          };
+        });
+      },
+    );
+
   const recordings = program
     .command("recordings")
     .description("inspect captured recordings");
@@ -194,6 +253,49 @@ export const runCLI = async (argv = process.argv): Promise<void> => {
         return { result: await showRecording(paths, recordingID) };
       });
     });
+
+  recordings
+    .command("verify <recordingID>")
+    .description("validate recording artifacts and calculate checksums")
+    .action(async (recordingID: string, _options, command) => {
+      const globals = globalsFor(command);
+      await runFinite("recordings verify", globals, async () => {
+        const paths = getPaths(resolveHome(globals.home));
+        const result = await verifyRecording(paths, recordingID);
+        return { result, ok: result.passed };
+      });
+    });
+
+  recordings
+    .command("export <recordingID>")
+    .description("copy a recording into a portable checksummed directory")
+    .requiredOption("--destination <absolute-path>", "new export directory")
+    .option("--wav", "also render a PCM WAV copy with FFmpeg")
+    .option("--dry-run", "show the export plan without writing")
+    .action(
+      async (
+        recordingID: string,
+        options: { destination: string; dryRun?: boolean; wav?: boolean },
+        command,
+      ) => {
+        const globals = globalsFor(command);
+        await runFinite("recordings export", globals, async () => {
+          const paths = getPaths(resolveHome(globals.home));
+          return {
+            result: await exportRecording(
+              paths,
+              recordingID,
+              options.destination,
+              {
+                dryRun: Boolean(options.dryRun),
+                wav: Boolean(options.wav),
+                timeoutMs: parseDurationMs(globals.timeout ?? "30s"),
+              },
+            ),
+          };
+        });
+      },
+    );
 
   const daemon = program
     .command("daemon")

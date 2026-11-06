@@ -16,7 +16,9 @@ export interface RecordingManifest {
   version: 1;
   recordingID: string;
   guildID: string;
+  guildName?: string | null;
   channelID: string;
+  channelName?: string | null;
   status: RecordingStatus;
   startedAt: string;
   updatedAt: string;
@@ -92,6 +94,7 @@ export const createRecording = async (
   guildID: string,
   channelID: string,
   now = new Date(),
+  names: { guildName?: string | null; channelName?: string | null } = {},
 ): Promise<{ location: RecordingLocation; manifest: RecordingManifest }> => {
   const recordingID = randomUUID();
   const location = locationForDirectory(
@@ -103,7 +106,9 @@ export const createRecording = async (
     version: 1,
     recordingID,
     guildID,
+    guildName: names.guildName ?? null,
     channelID,
+    channelName: names.channelName ?? null,
     status: "recording",
     startedAt: timestamp,
     updatedAt: timestamp,

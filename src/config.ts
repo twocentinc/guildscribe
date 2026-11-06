@@ -7,6 +7,7 @@ import {
   lstat,
   mkdir,
   readFile,
+  rename,
   rm,
   unlink,
   writeFile,
@@ -55,6 +56,34 @@ export const initRequestSchema = z
   .strict();
 
 export type InitRequest = z.infer<typeof initRequestSchema>;
+
+const nullableExecutablePathSchema = executablePathSchema.nullable();
+export const configUpdateRequestSchema = z
+  .object({
+    discordToken: z.string().trim().min(1).optional(),
+    voiceChannelIDs: voiceChannelIDsSchema.optional(),
+    emptyGraceMs: z.number().int().min(0).max(3_600_000).optional(),
+    hookTimeoutMs: z.number().int().min(1).max(3_600_000).optional(),
+    transcriptionHook: nullableExecutablePathSchema.optional(),
+    hooks: z
+      .object({
+        channelJoined: nullableExecutablePathSchema.optional(),
+        channelLeft: nullableExecutablePathSchema.optional(),
+        recordingStarted: nullableExecutablePathSchema.optional(),
+        recordingCompleted: nullableExecutablePathSchema.optional(),
+        recordingFailed: nullableExecutablePathSchema.optional(),
+        transcriptionCompleted: nullableExecutablePathSchema.optional(),
+        transcriptionFailed: nullableExecutablePathSchema.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .refine((request) => Object.keys(request).length > 0, {
+    message: "At least one configuration value is required",
+  });
+
+export type ConfigUpdateRequest = z.infer<typeof configUpdateRequestSchema>;
 
 export interface GuildscribePaths {
   home: string;
@@ -135,7 +164,10 @@ const readStdin = async (): Promise<string> => {
   return Buffer.concat(chunks).toString("utf8");
 };
 
-export const readInitRequest = async (source: string): Promise<InitRequest> => {
+const readRequest = async <T>(
+  source: string,
+  schema: z.ZodType<T>,
+): Promise<T> => {
   let raw: string;
   try {
     raw = source === "-" ? await readStdin() : await readFile(source, "utf8");
@@ -161,7 +193,7 @@ export const readInitRequest = async (source: string): Promise<InitRequest> => {
       },
     );
   }
-  const result = initRequestSchema.safeParse(parsed);
+  const result = schema.safeParse(parsed);
   if (!result.success) {
     throw new GuildscribeError("invalid_request", "Request validation failed", {
       details: {
@@ -174,6 +206,14 @@ export const readInitRequest = async (source: string): Promise<InitRequest> => {
   }
   return result.data;
 };
+
+export const readInitRequest = async (source: string): Promise<InitRequest> =>
+  readRequest(source, initRequestSchema);
+
+export const readConfigUpdateRequest = async (
+  source: string,
+): Promise<ConfigUpdateRequest> =>
+  readRequest(source, configUpdateRequestSchema);
 
 const encodeValue = (value: string | number): string =>
   JSON.stringify(String(value));
@@ -223,6 +263,89 @@ const renderEnv = (request: InitRequest): string => {
     );
   }
   return `${lines.join("\n")}\n`;
+};
+
+export const redactedConfiguration = (config: GuildscribeConfig) => ({
+  discordToken: "[redacted]",
+  voiceChannelIDs: config.voiceChannelIDs,
+  emptyGraceMs: config.emptyGraceMs,
+  hookTimeoutMs: config.hookTimeoutMs,
+  transcriptionHook: config.transcriptionHook ?? null,
+  hooks: config.hooks,
+});
+
+const mergedConfiguration = (
+  config: GuildscribeConfig,
+  update: ConfigUpdateRequest,
+): InitRequest => {
+  const hooks: HookConfiguration = {};
+  for (const [name, value] of Object.entries(config.hooks) as Array<
+    [keyof HookConfiguration, string]
+  >) {
+    hooks[name] = value;
+  }
+  for (const [name, value] of Object.entries(update.hooks ?? {}) as Array<
+    [keyof HookConfiguration, string | null]
+  >) {
+    if (value === null) delete hooks[name];
+    else hooks[name] = value;
+  }
+  const transcriptionHook =
+    update.transcriptionHook === null
+      ? undefined
+      : (update.transcriptionHook ?? config.transcriptionHook);
+  return {
+    discordToken: update.discordToken ?? config.discordToken,
+    voiceChannelIDs: update.voiceChannelIDs ?? config.voiceChannelIDs,
+    emptyGraceMs: update.emptyGraceMs ?? config.emptyGraceMs,
+    hookTimeoutMs: update.hookTimeoutMs ?? config.hookTimeoutMs,
+    ...(transcriptionHook ? { transcriptionHook } : {}),
+    ...(Object.keys(hooks).length > 0 ? { hooks } : {}),
+  };
+};
+
+export const updateConfiguration = async (
+  paths: GuildscribePaths,
+  update: ConfigUpdateRequest,
+  dryRun: boolean,
+) => {
+  const current = await loadConfig(paths);
+  const merged = mergedConfiguration(current, update);
+  const previewHooks: HookConfiguration = {};
+  for (const [name, value] of Object.entries(merged.hooks ?? {}) as Array<
+    [keyof HookConfiguration, string | undefined]
+  >) {
+    if (value) previewHooks[name] = value;
+  }
+  const preview = redactedConfiguration({
+    discordToken: merged.discordToken,
+    voiceChannelIDs: merged.voiceChannelIDs,
+    emptyGraceMs: merged.emptyGraceMs ?? 30_000,
+    hookTimeoutMs: merged.hookTimeoutMs ?? 30_000,
+    transcriptionHook: merged.transcriptionHook,
+    hooks: previewHooks,
+  });
+  if (dryRun) {
+    return { changed: false, dryRun: true, restartRequired: true, configuration: preview };
+  }
+  const temporaryPath = path.join(paths.home, `.env.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporaryPath, renderEnv(merged), {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
+    await rename(temporaryPath, paths.env);
+    await chmod(paths.env, 0o600);
+  } catch (error) {
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
+    throw new GuildscribeError(
+      "configuration_update_failed",
+      "Could not update Guildscribe configuration",
+      { cause: error, retrySafety: "unknown" },
+    );
+  }
+  return { changed: true, dryRun: false, restartRequired: true, configuration: preview };
 };
 
 const exists = async (candidate: string): Promise<boolean> => {

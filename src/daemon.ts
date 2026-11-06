@@ -11,20 +11,16 @@ import {
 } from "./results.js";
 import { GuildscribeRecorder, recoverRecordings } from "./recorder.js";
 import { TranscriptionWorker } from "./transcription.js";
-
-const processIsAlive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-};
+import {
+  daemonLockText,
+  parseDaemonLock,
+  processIsAlive,
+} from "./status.js";
 
 const acquireLock = async (
   paths: GuildscribePaths,
 ): Promise<() => Promise<void>> => {
-  const contents = `${process.pid}\n`;
+  const contents = daemonLockText();
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const handle = await open(paths.lock, "wx", 0o600);
@@ -42,10 +38,11 @@ const acquireLock = async (
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const existing = Number(
-        (await readFile(paths.lock, "utf8").catch(() => "")).trim(),
-      );
+      const existing = parseDaemonLock(
+        await readFile(paths.lock, "utf8").catch(() => ""),
+      )?.pid;
       if (
+        existing !== undefined &&
         Number.isSafeInteger(existing) &&
         existing > 0 &&
         processIsAlive(existing)

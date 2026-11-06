@@ -13,13 +13,16 @@ import {
   readTranscriptionState,
   type TranscriptionStatus,
 } from "./transcription.js";
+import { readParticipants } from "./participants.js";
 
 export type RecordingStorage = "inProgress" | "published";
 
 export interface RecordingSummary {
   recordingID: string;
   guildID: string;
+  guildName: string | null;
   channelID: string;
+  channelName: string | null;
   status: RecordingManifest["status"];
   storage: RecordingStorage;
   directory: string;
@@ -32,6 +35,7 @@ export interface RecordingSummary {
   transcriptionStatus: TranscriptionStatus | null;
   transcriptJSONBytes: number;
   transcriptTextBytes: number;
+  participantCount: number;
   pcmFileCount: number;
   pcmFileBytes: number;
   fileCount: number;
@@ -47,12 +51,12 @@ export interface RecordingTotals {
   totalBytes: number;
 }
 
-interface DiscoveredRecording {
+export interface DiscoveredRecording {
   storage: RecordingStorage;
   location: RecordingLocation;
 }
 
-interface FileUsage {
+export interface FileUsage {
   relativePath: string;
   bytes: number;
 }
@@ -66,7 +70,7 @@ const directoryEntries = async (directory: string) => {
   }
 };
 
-const discoverRecordings = async (
+export const discoverRecordings = async (
   paths: GuildscribePaths,
 ): Promise<DiscoveredRecording[]> => {
   const discovered: DiscoveredRecording[] = [];
@@ -97,7 +101,7 @@ const discoverRecordings = async (
   return discovered;
 };
 
-const collectFiles = async (
+export const collectRecordingFiles = async (
   root: string,
   directory = root,
 ): Promise<FileUsage[]> => {
@@ -105,7 +109,7 @@ const collectFiles = async (
   for (const entry of await directoryEntries(directory)) {
     const candidate = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      files.push(...(await collectFiles(root, candidate)));
+      files.push(...(await collectRecordingFiles(root, candidate)));
     } else if (entry.isFile()) {
       const info = await stat(candidate);
       files.push({
@@ -121,7 +125,7 @@ const summarizeRecording = async (
   discovered: DiscoveredRecording,
 ): Promise<RecordingSummary> => {
   const manifest = await readManifest(discovered.location);
-  const files = await collectFiles(discovered.location.directory);
+  const files = await collectRecordingFiles(discovered.location.directory);
   const pcmFiles = files.filter(({ relativePath }) =>
     relativePath.endsWith(".pcm"),
   );
@@ -132,7 +136,10 @@ const summarizeRecording = async (
     ? (files.find(({ relativePath }) => relativePath === audioRelativePath)
         ?.bytes ?? 0)
     : 0;
-  const transcription = await readTranscriptionState(discovered.location);
+  const [transcription, participants] = await Promise.all([
+    readTranscriptionState(discovered.location),
+    readParticipants(discovered.location),
+  ]);
   const transcriptJSONBytes =
     files.find(({ relativePath }) => relativePath === "transcript.json")
       ?.bytes ?? 0;
@@ -142,7 +149,9 @@ const summarizeRecording = async (
   return {
     recordingID: manifest.recordingID,
     guildID: manifest.guildID,
+    guildName: manifest.guildName ?? null,
     channelID: manifest.channelID,
+    channelName: manifest.channelName ?? null,
     status: manifest.status,
     storage: discovered.storage,
     directory: discovered.location.directory,
@@ -155,6 +164,7 @@ const summarizeRecording = async (
     transcriptionStatus: transcription?.status ?? null,
     transcriptJSONBytes,
     transcriptTextBytes,
+    participantCount: participants?.participants.length ?? 0,
     pcmFileCount: pcmFiles.length,
     pcmFileBytes: pcmFiles.reduce((total, file) => total + file.bytes, 0),
     fileCount: files.length,
@@ -200,6 +210,13 @@ export const showRecording = async (
   paths: GuildscribePaths,
   recordingID: string,
 ): Promise<RecordingSummary> => {
+  return summarizeRecording(await findRecording(paths, recordingID));
+};
+
+export const findRecording = async (
+  paths: GuildscribePaths,
+  recordingID: string,
+): Promise<DiscoveredRecording> => {
   const matches = (await discoverRecordings(paths)).filter(
     ({ location }) => path.basename(location.directory) === recordingID,
   );
@@ -219,5 +236,5 @@ export const showRecording = async (
       { details: { recordingID }, retrySafety: "unknown" },
     );
   }
-  return summarizeRecording(matches[0] as DiscoveredRecording);
+  return matches[0] as DiscoveredRecording;
 };

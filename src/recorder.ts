@@ -37,6 +37,12 @@ import {
 } from "./manifests.js";
 import { renderMaster } from "./renderer.js";
 import { diagnostic, sanitizeError } from "./results.js";
+import {
+  finalizeParticipants,
+  initializeParticipants,
+  updateParticipantPresence,
+  type ParticipantSnapshot,
+} from "./participants.js";
 
 const SEGMENT_SILENCE_MS = 500;
 const CHECKPOINT_MS = 2_000;
@@ -151,6 +157,12 @@ export const recoverRecordings = async (
       ).toISOString();
       manifest.intervalCount = intervals.length;
       manifest.error = null;
+      await finalizeParticipants(
+        location,
+        manifest.recordingID,
+        intervals,
+        manifest.endedAt,
+      );
       await saveManifest(location, manifest);
       const rendered = await renderMaster(
         location,
@@ -239,7 +251,10 @@ export class GuildscribeRecorder {
         ? oldState.channelId
         : null;
     if (!preferredChannelID) return Promise.resolve();
-    return this.enqueue(() => this.reconcile(preferredChannelID));
+    return this.enqueue(async () => {
+      await this.recordParticipantTransition(oldState, newState);
+      await this.reconcile(preferredChannelID);
+    });
   }
 
   public handleGatewayResume(): Promise<void> {
@@ -312,6 +327,50 @@ export class GuildscribeRecorder {
     return null;
   }
 
+  private participantSnapshot(state: VoiceState): ParticipantSnapshot | null {
+    const member = state.member;
+    if (!member || member.user.bot) return null;
+    return {
+      userID: member.user.id,
+      username: member.user.username,
+      displayName: member.displayName,
+    };
+  }
+
+  private async recordParticipantTransition(
+    oldState: VoiceState,
+    newState: VoiceState,
+  ): Promise<void> {
+    const active = this.recording;
+    if (!active) return;
+    const oldParticipant = this.participantSnapshot(oldState);
+    const newParticipant = this.participantSnapshot(newState);
+    const channelID = active.manifest.channelID;
+    const occurredAt = new Date().toISOString();
+    if (
+      oldParticipant &&
+      oldState.channelId === channelID &&
+      newState.channelId !== channelID
+    ) {
+      await updateParticipantPresence(
+        active.location,
+        active.manifest.recordingID,
+        oldParticipant,
+        false,
+        occurredAt,
+      );
+    }
+    if (newParticipant && newState.channelId === channelID) {
+      await updateParticipantPresence(
+        active.location,
+        active.manifest.recordingID,
+        newParticipant,
+        true,
+        occurredAt,
+      );
+    }
+  }
+
   private async reconcile(preferredChannelID?: string | null): Promise<void> {
     if (this.shuttingDown) return;
     const channel = this.recording
@@ -337,6 +396,20 @@ export class GuildscribeRecorder {
           this.paths,
           channel.guild.id,
           channel.id,
+          new Date(),
+          { guildName: channel.guild.name, channelName: channel.name },
+        );
+        await initializeParticipants(
+          created.location,
+          created.manifest.recordingID,
+          channel.members
+            .filter((member) => !member.user.bot)
+            .map((member) => ({
+              userID: member.user.id,
+              username: member.user.username,
+              displayName: member.displayName,
+            })),
+          created.manifest.startedAt,
         );
         this.recording = created;
         diagnostic("info", "recording.started", {
@@ -695,6 +768,12 @@ export class GuildscribeRecorder {
     try {
       const intervals = await loadIntervals(active.location);
       active.manifest.intervalCount = intervals.length;
+      await finalizeParticipants(
+        active.location,
+        active.manifest.recordingID,
+        intervals,
+        active.manifest.endedAt,
+      );
       const rendered = await renderMaster(
         active.location,
         active.manifest.durationMs,

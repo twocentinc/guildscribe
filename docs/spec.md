@@ -1,7 +1,7 @@
 # Guildscribe specification
 
-Status: implementation contract for recording and optional executable-hook
-transcription.
+Status: implementation contract for recording, recorder operations, optional
+executable-hook transcription, and standalone distribution.
 
 ## Product definition
 
@@ -30,9 +30,14 @@ The implemented slice:
 - renders and validates one combined MP3;
 - preserves interrupted recordings and recovers their captured audio after a
   restart;
+- records versioned participant presence history and speaking duration;
+- exposes redacted configuration, live status, artifact verification, and
+  portable checksummed exports through agent-safe JSON commands;
 - invokes optional local executable hooks for recording events; and
 - durably queues one optional transcription executable at a time, validates its
-  staged result, and publishes canonical transcript files.
+  staged result, and publishes canonical transcript files; and
+- packages as an npm CLI and provides macOS startup, upgrade, and uninstall
+  workflows that preserve runtime data.
 
 Bundled Nightcrew integration, speaker-track publication, transcript merging,
 and reasoning stages are not implemented.
@@ -79,7 +84,11 @@ guildscribe/
   scripts/
     daemon
     installLaunchAgent.sh
+    packageRelease.mjs
+    testPackage.mjs
+    uninstallGlobal.sh
     uninstallLaunchAgent.sh
+    upgradeGlobal.sh
   src/
     index.ts
     cli.ts
@@ -89,19 +98,26 @@ guildscribe/
     hooks.ts
     manifests.ts
     macosLaunchAgent.ts
+    participants.ts
+    recordingArtifacts.ts
     recorder.ts
     recordings.ts
     renderer.ts
     results.ts
     startup.ts
+    status.ts
     transcription.ts
   test/
     config.test.mjs
     macosLaunchAgent.test.mjs
     manifests.test.mjs
+    operationsCli.test.mjs
+    participants.test.mjs
+    recordingArtifacts.test.mjs
     recorder.test.mjs
     recordings.test.mjs
     results.test.mjs
+    status.test.mjs
     transcription.test.mjs
 ```
 
@@ -122,6 +138,7 @@ another home for every command.
   in-progress/
     <recordingID>/
       recording.json
+      participants.json
       intervals/
         <intervalID>.json
         <intervalID>.pcm
@@ -131,6 +148,7 @@ another home for every command.
       <month>/
         <recordingID>/
           recording.json
+          participants.json
           transcription.json
           transcript.json
           transcript.txt
@@ -140,7 +158,8 @@ another home for every command.
           audio.mp3
 ```
 
-`guildscribe.lock` exists only while the daemon is running. Completed raw PCM
+`guildscribe.lock` exists only while the daemon is running and contains a
+versioned JSON record with its process ID and start time. Completed raw PCM
 files and their JSON interval sidecars remain permanently with the published
 recording so speaker audio, identity, timing, and capture gaps stay inspectable
 and available to optional processing.
@@ -182,10 +201,17 @@ executable paths. The default empty grace is 30 seconds and the default
 lifecycle hook timeout is 30 seconds; that short timeout does not apply to the
 transcription worker.
 
+`guildscribe config show` is the safe read surface for configuration. It never
+returns the Discord token. `guildscribe config update` accepts the same fields
+as initialization, all optional, and atomically replaces `.env`; JSON `null`
+clears an existing transcription or lifecycle hook. Channel ordering is
+meaningful and is preserved. A successful update reports that a daemon restart
+is required; it does not silently restart the recorder.
+
 ## Persistent documents
 
-`recording.json`, `transcription.json`, `transcript.json`, and every interval
-sidecar are versioned JSON documents.
+`recording.json`, `participants.json`, `transcription.json`, `transcript.json`,
+and every interval sidecar are versioned JSON documents.
 Guildscribe writes them through a same-directory temporary file and atomic
 rename. The recording manifest records identity, lifecycle state, timestamps,
 duration, final audio filename, interruption status, and sanitized failure.
@@ -200,6 +226,12 @@ Speaking interval sidecars record:
 
 Connection-gap sidecars use the same timing fields with a gap reason and no
 speaker. Display names never appear in filenames.
+
+`participants.json` contains one record for every human observed in the
+meeting. Each participant has Discord identity metadata, an ordered list of
+join/leave sessions, and total speaking duration derived from durable speaking
+intervals. Open sessions are closed at the meeting end. This document is
+meeting metadata, not a transcript and not a replacement for interval timing.
 
 `transcription.json` records the independent worker state, attempt count,
 timestamps, and sanitized failure. `transcript.json` contains the validated
@@ -396,8 +428,13 @@ guildscribe help
 guildscribe version
 guildscribe init --request <file-or-dash> [--dry-run]
 guildscribe doctor
+guildscribe status
+guildscribe config show
+guildscribe config update --request <file-or-dash> [--dry-run]
 guildscribe recordings list
 guildscribe recordings show <recordingID>
+guildscribe recordings verify <recordingID>
+guildscribe recordings export <recordingID> --destination <absolute-path> [--wav] [--dry-run]
 guildscribe daemon run
 guildscribe startup install [--dry-run]
 guildscribe startup uninstall
@@ -442,6 +479,32 @@ more than one storage location fails with `recording_ambiguous`. These commands
 only inspect filesystem metadata and never read or expose captured audio or
 transcript contents.
 
+### Operational status
+
+`guildscribe status` reads durable state and reports daemon liveness and
+uptime, the configured channel allowlist, whether transcription is enabled,
+the active recording and any empty-channel grace deadline, the latest
+published recording, and aggregate storage totals. It never contacts Discord,
+returns the token, or mutates state. A stale or malformed lock is reported as
+not running rather than treated as proof that a daemon exists.
+
+### Recording verification and export
+
+`recordings verify` is read-only. It validates manifest identity and lifecycle,
+interval sidecars and counts, PCM existence and stereo-frame alignment,
+connection-gap invariants, combined MP3 duration through FFprobe, participant
+metadata, and transcript consistency. It also returns byte counts and SHA-256
+digests for every durable file. Failed checks make the command envelope
+unsuccessful without changing the recording.
+
+`recordings export` copies one recording into a new absolute destination and
+writes `checksums.sha256`. It excludes transient transcription staging and
+never changes the source recording. The destination must not already exist or
+be inside the source. `--dry-run` returns the plan without writing. `--wav`
+uses the mandatory FFmpeg installation to add a portable PCM WAV copy; WAV is
+an export convenience and is never stored as a canonical recording artifact.
+If export fails, Guildscribe removes only the newly created partial destination.
+
 ### Initialization
 
 `guildscribe init` reads a JSON request from a file or stdin:
@@ -464,6 +527,11 @@ The token and at least one unique channel ID are required. Initialization valida
 creates the runtime home and artifact directories, and creates `.env`
 exclusively. If `.env` already exists, initialization fails without changing
 it. `--dry-run` creates nothing. Initialization does not contact Discord.
+
+Configuration updates use the same structured-request rule: new secrets may
+only arrive through a JSON file or stdin, never a command-line value. Unknown
+fields and empty update objects are rejected. `--dry-run` validates and returns
+the fully merged redacted configuration without changing `.env`.
 
 ### Doctor
 
@@ -506,6 +574,27 @@ it stopped. `startup start` or `startup restart` resumes it. Process type is
 removes `.env`, recordings, in-progress recovery data, or logs. The scripts
 must run as the logged-in user and reject root execution.
 
+## Packaging, releases, upgrade, and uninstall
+
+The npm package name and executable are both `guildscribe`. Published packages
+contain compiled JavaScript, documentation, launchd helpers, and maintenance
+scripts; runtime data is never packaged. `npm run test:package` installs an
+actual packed tarball into an isolated prefix and runs its `guildscribe
+version` command. `npm run package:release` writes the tarball and a SHA-256
+sidecar below ignored `artifacts/`.
+
+Tags matching `v<package-version>` run the GitHub release workflow. It checks
+that the tag matches `package.json`, runs type checking, tests, and the package
+smoke test, builds a release tarball, creates a build-provenance attestation,
+and publishes the tarball plus checksum to a GitHub release. npm registry
+publication is deliberately not automated by this slice.
+
+`scripts/upgradeGlobal.sh` upgrades the globally installed npm package and
+reinstalls the per-user LaunchAgent so its executable paths match the new
+installation. `scripts/uninstallGlobal.sh` removes the LaunchAgent and global
+package. Both reject root execution. Neither script removes `.env`, logs,
+in-progress recovery state, recordings, exports, or any other runtime data.
+
 ## Transcription and Nightcrew boundary
 
 Guildscribe publishes `transcript.json` as the canonical versioned document and
@@ -545,6 +634,13 @@ No reasoning stage follows transcription.
 - A completed meeting produces a validated, playable combined MP3.
 - Restarting during capture retains and renders the captured portion.
 - Recording hooks cannot invalidate completed media.
+- Status, configuration reads, and inventory never reveal the Discord token.
+- Configuration updates are atomic, previewable, and preserve channel order.
+- Participant join/leave history and speaking duration remain available without
+  reading audio or transcript contents.
+- Verification is read-only and detects missing or malformed recording
+  artifacts.
+- Export creates a checksummed portable copy without changing its source.
 - An omitted transcription hook leaves capture fully functional and creates no
   transcription state.
 - A configured transcription hook receives combined audio, retained PCM,
@@ -552,4 +648,6 @@ No reasoning stage follows transcription.
 - Pending or interrupted transcription survives restart, while failed work
   remains inspectable and is not retried automatically.
 - Valid staged output publishes canonical JSON and text without deleting PCM.
+- The packed npm CLI installs in isolation and returns a valid JSON version
+  envelope.
 - No SQLite database or runtime dependency is created.
