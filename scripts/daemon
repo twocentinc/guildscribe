@@ -1,0 +1,21 @@
+#!/bin/bash
+
+set -euo pipefail
+
+export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+project_root="$(cd "$script_dir/.." && pwd)"
+runtime_home="${1:-$HOME/.guildscribe}"
+node_binary="${2:-node}"
+
+if [[ "$node_binary" != */* ]]; then
+  node_binary="$(command -v "$node_binary" || true)"
+fi
+
+if [[ ! -x "$node_binary" ]]; then
+  echo "Guildscribe Node executable is unavailable: $node_binary" >&2
+  exit 127
+fi
+
+exec "$node_binary" "$project_root/dist/index.js" --home "$runtime_home" daemon run

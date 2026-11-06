@@ -1,0 +1,11 @@
+dist/
+node_modules/
+.guildscribe/
+.env
+.env.*
+!.env.example
+coverage/
+*.tgz
+*.log
+.DS_Store
+
