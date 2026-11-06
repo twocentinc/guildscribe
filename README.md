@@ -52,8 +52,8 @@ npm run build
 Discover commands and machine-readable contracts without parsing prose:
 
 ```sh
-node dist/index.js help --pretty
-node dist/index.js recordings --help --pretty
+node dist/index.js help
+node dist/index.js recordings --help
 ```
 
 Initialize from a JSON request without putting the token in shell history:
@@ -62,12 +62,12 @@ Initialize from a JSON request without putting the token in shell history:
 printf '%s' '{"discordToken":"...","voiceChannelIDs":["..."]}' |
   node dist/index.js init --request -
 
-node dist/index.js doctor --schema init.request --pretty
-node dist/index.js status --pretty
-node dist/index.js config show --pretty
-node dist/index.js recordings list --pretty
-node dist/index.js recordings show <recordingID> --pretty
-node dist/index.js recordings verify <recordingID> --pretty
+node dist/index.js doctor --schema init.request
+node dist/index.js status
+node dist/index.js config show
+node dist/index.js recordings list
+node dist/index.js recordings show <recordingID>
+node dist/index.js recordings verify <recordingID>
 node dist/index.js daemon run
 ```
 
@@ -80,15 +80,15 @@ result reports `restartRequired`:
 
 ```sh
 printf '%s' '{"voiceChannelIDs":["..."]}' |
-  node dist/index.js config update --request - --pretty
-node dist/index.js startup restart --pretty
+  node dist/index.js config update --request -
+node dist/index.js startup restart
 ```
 
 Create a portable copy without touching the source recording:
 
 ```sh
 node dist/index.js recordings export <recordingID> \
-  --destination /absolute/path/to/export --pretty
+  --destination /absolute/path/to/export
 ```
 
 To enable transcription, add an absolute executable path to the initialization
@@ -115,8 +115,8 @@ After initialization and a successful doctor check, install the per-user
 LaunchAgent:
 
 ```sh
-./scripts/installLaunchAgent.sh --pretty
-node dist/index.js startup status --pretty
+./scripts/installLaunchAgent.sh
+node dist/index.js startup status
 ```
 
 The LaunchAgent starts Guildscribe at login and restarts it after an
@@ -125,7 +125,7 @@ unexpected failure. It runs `scripts/daemon`; Discord-specific work remains in
 start|stop|restart|status|logs`. Remove only the startup registration with:
 
 ```sh
-./scripts/uninstallLaunchAgent.sh --pretty
+./scripts/uninstallLaunchAgent.sh
 ```
 
 Uninstalling the LaunchAgent does not remove configuration, recordings, or

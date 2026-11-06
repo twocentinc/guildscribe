@@ -167,7 +167,6 @@ const definitions = [
 export const GLOBAL_OPTIONS = [
   "--home <absolute-path>",
   "--request-id <ID>",
-  "--pretty",
   "--timeout <duration>",
   "--no-input",
   "--non-interactive",

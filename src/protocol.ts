@@ -413,7 +413,6 @@ export const packageVersion = (): string => {
 
 export interface ResultContext {
   command: string;
-  pretty: boolean;
   requestID: string;
 }
 
@@ -433,9 +432,7 @@ const canonicalize = (value: unknown): unknown => {
 };
 
 const writeEnvelope = (context: ResultContext, envelope: unknown): void => {
-  process.stdout.write(
-    `${JSON.stringify(canonicalize(envelope), null, context.pretty ? 2 : undefined)}\n`,
-  );
+  process.stdout.write(`${JSON.stringify(canonicalize(envelope))}\n`);
 };
 
 export const writeSuccess = (

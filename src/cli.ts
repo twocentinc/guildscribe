@@ -48,7 +48,6 @@ interface GlobalOptions {
   home?: string;
   input?: boolean;
   nonInteractive?: boolean;
-  pretty?: boolean;
   quiet?: boolean;
   requestId?: string;
   timeout?: string;
@@ -61,7 +60,6 @@ const contextFor = (
   options: GlobalOptions,
 ): ResultContext => ({
   command,
-  pretty: Boolean(options.pretty),
   requestID: createRequestID(options.requestId),
 });
 
@@ -133,7 +131,7 @@ const runFinite = async (
 
 const fallbackOptions = (argv: string[]): GlobalOptions => {
   const requestIndex = argv.indexOf("--request-id");
-  const options: GlobalOptions = { pretty: argv.includes("--pretty") };
+  const options: GlobalOptions = {};
   const requestID = requestIndex >= 0 ? argv[requestIndex + 1] : undefined;
   if (requestID) options.requestId = requestID;
   return options;
@@ -152,7 +150,6 @@ const globalDiscoveryArguments = (args: string[]): string[] => {
     "--verbosity",
   ]);
   const booleanOptions = new Set([
-    "--pretty",
     "--no-input",
     "--non-interactive",
     "--quiet",
@@ -233,7 +230,6 @@ export const runCLI = async (inputArgv = process.argv): Promise<void> => {
     .option("-V, --version", "print the version as JSON")
     .option("--home <absolute-path>", "runtime home")
     .option("--request-id <ID>", "caller-supplied request ID")
-    .option("--pretty", "pretty-print JSON")
     .option("--timeout <duration>", "finite operation timeout", "30s")
     .option("--no-input", "disable interactive behavior")
     .option("--non-interactive", "disable interactive behavior")

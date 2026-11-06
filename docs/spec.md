@@ -471,7 +471,6 @@ Shared options are:
 -V, --version
 --home <absolute-path>
 --request-id <ID>
---pretty
 --timeout <duration-with-unit>
 --no-input
 --non-interactive
@@ -480,10 +479,11 @@ Shared options are:
 --verbosity <quiet|normal|verbose|debug>
 ```
 
-Finite commands emit one protocol-version-1 JSON envelope on stdout. Errors
-use stable codes, structured details, exit classes, and `safe`, `unsafe`, or
-`never` retry classifications. Diagnostics use stderr. Secrets never appear in
-output. Schema version 1 is independently discoverable through doctor.
+Finite commands emit one compact protocol-version-1 JSON envelope on stdout.
+Presentation formatting belongs to the caller. Errors use stable codes,
+structured details, exit classes, and `safe`, `unsafe`, or `never` retry
+classifications. Diagnostics use stderr. Secrets never appear in output. Schema
+version 1 is independently discoverable through doctor.
 
 ### Recording inventory
 

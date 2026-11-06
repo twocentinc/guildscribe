@@ -3,14 +3,17 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { commandCatalog } from "../dist/commands.js";
+import { commandCatalog, GLOBAL_OPTIONS } from "../dist/commands.js";
 import { schemaCatalog } from "../dist/protocol.js";
 
 const readSnapshot = async (name) =>
   JSON.parse(await readFile(new URL(`./snapshots/${name}`, import.meta.url)));
 
 test("command catalog matches its reviewed snapshot", async () => {
-  assert.deepEqual(commandCatalog(), await readSnapshot("command-catalog.json"));
+  assert.deepEqual(
+    { commands: commandCatalog(), globalOptions: [...GLOBAL_OPTIONS] },
+    await readSnapshot("command-catalog.json"),
+  );
 });
 
 test("published JSON schemas match their reviewed snapshot", async () => {
@@ -36,7 +39,6 @@ test("discovery aliases preserve global controls", () => {
       "dist/index.js",
       "recordings",
       "--help",
-      "--pretty",
       "--request-id",
       "discovery-test",
     ],
@@ -45,7 +47,7 @@ test("discovery aliases preserve global controls", () => {
   const envelope = JSON.parse(output);
   assert.equal(envelope.requestID, "discovery-test");
   assert.deepEqual(envelope.result.scope, ["recordings"]);
-  assert.ok(output.includes("\n  \"command\""));
+  assert.equal(output.trim().split("\n").length, 1);
 });
 
 test("invalid CLI input emits one JSON error with a stable exit class", () => {

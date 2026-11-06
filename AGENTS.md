@@ -50,10 +50,11 @@ Saratonin so it can be published and installed on its own.
   command or schema inventories in documentation.
 - Organize commands as `guildscribe <resource> <action> [flags]` where a
   resource/action form is natural.
-- Emit one stable, versioned JSON result envelope on stdout for finite
+- Emit one stable, versioned, compact JSON result envelope on stdout for finite
   commands. Write progress, warnings, and diagnostics only to stderr.
-- Support `--pretty`, `--request-id`, `--home`, `--timeout`,
-  `--non-interactive`, and explicit verbosity controls consistently.
+- Support `--request-id`, `--home`, `--timeout`,
+  `--no-input`, `--non-interactive`, and explicit verbosity controls
+  consistently.
 - Read secrets and structured mutation requests from a file or stdin, never
   from a plaintext command-line flag.
 - Provide `--dry-run` for mutations when meaningful and require explicit
@@ -77,8 +78,9 @@ Apply this section to future agent-operated CLIs unless the project has a
 specific reason to narrow it. Keep project-specific product rules outside this
 section so it can be copied without carrying Guildscribe behavior with it.
 
-- Every finite command writes exactly one versioned JSON envelope to stdout.
-  Diagnostics go to stderr and never corrupt stdout JSON.
+- Every finite command writes exactly one versioned compact JSON envelope to
+  stdout. Diagnostics go to stderr and never corrupt stdout JSON. Callers that
+  want presentation formatting can pipe the result through their JSON tool.
 - Include a caller-supplied request ID when present and generate one otherwise.
   Use stable command context in success and error envelopes.
 - Publish retry safety as exactly `safe`, `unsafe`, or `never`. `safe`
@@ -101,8 +103,8 @@ section so it can be copied without carrying Guildscribe behavior with it.
   require an explicit confirmation mechanism even in non-interactive mode.
 - Duration flags require explicit units such as `ms`, `s`, or `m`; do not
   accept ambiguous bare numbers.
-- Global flags are behavior, not decoration. `--pretty`, `--request-id`,
-  `--timeout`, `--no-input`, `--quiet`, `--verbose`, and
+- Global flags are behavior, not decoration. `--request-id`, `--timeout`,
+  `--no-input`, `--quiet`, `--verbose`, and
   `--verbosity` must either work consistently or not be advertised.
 - Help and contract discovery must be JSON-native. The runtime command registry
   and exported schemas are authoritative; Markdown examples are illustrative.
