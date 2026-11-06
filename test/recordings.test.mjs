@@ -55,7 +55,11 @@ const createInventory = async () => {
     "222222222222222222",
     new Date("2026-11-05T12:00:00.000Z"),
   );
-  await addPCMInterval(published, "published-interval", 100);
+  await addPCMInterval(
+    published,
+    "66666666-6666-4666-8666-666666666666",
+    100,
+  );
   await writeFile(path.join(published.location.directory, "audio.mp3"), Buffer.alloc(50));
   published.manifest.status = "complete";
   published.manifest.endedAt = "2026-11-05T12:01:00.000Z";
@@ -75,7 +79,11 @@ const createInventory = async () => {
     "444444444444444444",
     new Date("2026-11-06T12:00:00.000Z"),
   );
-  await addPCMInterval(inProgress, "active-interval", 25);
+  await addPCMInterval(
+    inProgress,
+    "77777777-7777-4777-8777-777777777777",
+    25,
+  );
 
   return { home, inProgress, paths, published, publishedLocation };
 };

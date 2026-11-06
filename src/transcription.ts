@@ -13,11 +13,15 @@ import { z } from "zod";
 import type { GuildscribeConfig, GuildscribePaths } from "./config.js";
 import { invokeHook } from "./hooks.js";
 import {
+  loadIntervals,
   locationForDirectory,
   readManifest,
+  recordingIDSchema,
+  discordIDSchema,
   writeJSON,
   type RecordingLocation,
   type RecordingManifest,
+  type RecordingInterval,
 } from "./recording.js";
 import { diagnostic, sanitizeError } from "./protocol.js";
 
@@ -27,45 +31,101 @@ export type TranscriptionStatus =
   | "complete"
   | "failed";
 
-export interface TranscriptionState {
-  version: 1;
-  recordingID: string;
-  status: TranscriptionStatus;
-  attempts: number;
-  createdAt: string;
-  updatedAt: string;
-  startedAt: string | null;
-  completedAt: string | null;
-  error: string | null;
-}
-
 const transcriptionStateSchema = z
   .object({
     version: z.literal(1),
-    recordingID: z.string().min(1),
+    recordingID: recordingIDSchema,
     status: z.enum(["pending", "running", "complete", "failed"]),
     attempts: z.number().int().min(0),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
     startedAt: z.iso.datetime().nullable(),
     completedAt: z.iso.datetime().nullable(),
-    error: z.string().nullable(),
+    error: z.string().min(1).nullable(),
   })
-  .strict();
+  .strict()
+  .superRefine((state, context) => {
+    const issue = (path: string, message: string): void =>
+      context.addIssue({
+        code: "custom",
+        path: [path],
+        message,
+        input: state[path as keyof typeof state],
+      });
+    if (Date.parse(state.updatedAt) < Date.parse(state.createdAt)) {
+      issue("updatedAt", "updatedAt must not precede createdAt");
+    }
+    if (
+      state.startedAt &&
+      Date.parse(state.startedAt) < Date.parse(state.createdAt)
+    ) {
+      issue("startedAt", "startedAt must not precede createdAt");
+    }
+    if (
+      state.completedAt &&
+      (!state.startedAt ||
+        Date.parse(state.completedAt) < Date.parse(state.startedAt))
+    ) {
+      issue("completedAt", "completedAt must not precede startedAt");
+    }
+    if (state.status === "pending") {
+      if (state.startedAt !== null)
+        issue("startedAt", "pending must not have startedAt");
+      if (state.completedAt !== null)
+        issue("completedAt", "pending must not have completedAt");
+      if (state.error !== null) issue("error", "pending must not have error");
+    }
+    if (state.status === "running") {
+      if (state.attempts < 1) issue("attempts", "running requires an attempt");
+      if (state.startedAt === null)
+        issue("startedAt", "running requires startedAt");
+      if (state.completedAt !== null)
+        issue("completedAt", "running must not have completedAt");
+      if (state.error !== null) issue("error", "running must not have error");
+    }
+    if (state.status === "complete") {
+      if (state.attempts < 1) issue("attempts", "complete requires an attempt");
+      if (state.startedAt === null)
+        issue("startedAt", "complete requires startedAt");
+      if (state.completedAt === null)
+        issue("completedAt", "complete requires completedAt");
+      if (state.error !== null) issue("error", "complete must not have error");
+    }
+    if (state.status === "failed") {
+      if (state.attempts < 1) issue("attempts", "failed requires an attempt");
+      if (state.startedAt === null)
+        issue("startedAt", "failed requires startedAt");
+      if (state.completedAt !== null)
+        issue("completedAt", "failed must not have completedAt");
+      if (state.error === null) issue("error", "failed requires error");
+    }
+  });
+
+export type TranscriptionState = z.infer<typeof transcriptionStateSchema>;
 
 const transcriptSpeakerSchema = z
   .object({
-    userID: z.string().min(1).nullable(),
-    username: z.string().nullable(),
-    displayName: z.string().nullable(),
+    userID: discordIDSchema.nullable(),
+    username: z.string().min(1).nullable(),
+    displayName: z.string().min(1).nullable(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (speaker) =>
+      speaker.userID !== null ||
+      speaker.username !== null ||
+      speaker.displayName !== null,
+    { message: "speaker must contain at least one identity field" },
+  );
 
 const transcriptSegmentSchema = z
   .object({
     startOffsetMs: z.number().int().min(0),
     endOffsetMs: z.number().int().min(0),
-    text: z.string(),
+    text: z.string().refine((text) => text.trim().length > 0, {
+      message: "segment text must not be empty",
+    }),
+    sourceIntervalIDs: z.array(z.uuid()).min(1).optional(),
     speaker: transcriptSpeakerSchema.optional(),
   })
   .strict()
@@ -76,7 +136,7 @@ const transcriptSegmentSchema = z
 export const transcriptDocumentSchema = z
   .object({
     version: z.literal(1),
-    recordingID: z.string().min(1),
+    recordingID: recordingIDSchema,
     createdAt: z.iso.datetime(),
     language: z.string().min(1).nullable(),
     text: z.string(),
@@ -84,6 +144,14 @@ export const transcriptDocumentSchema = z
   })
   .strict()
   .superRefine((output, context) => {
+    if (output.segments.length > 0 && output.text.trim().length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "text must not be empty when segments are present",
+        path: ["text"],
+        input: output.text,
+      });
+    }
     for (let index = 1; index < output.segments.length; index += 1) {
       const previous = output.segments[index - 1];
       const current = output.segments[index];
@@ -96,6 +164,20 @@ export const transcriptDocumentSchema = z
           code: "custom",
           message: "segments must be ordered by startOffsetMs",
           path: ["segments", index, "startOffsetMs"],
+        });
+      }
+    }
+    for (const [index, segment] of output.segments.entries()) {
+      if (
+        segment.sourceIntervalIDs &&
+        new Set(segment.sourceIntervalIDs).size !==
+          segment.sourceIntervalIDs.length
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "sourceIntervalIDs must be unique",
+          path: ["segments", index, "sourceIntervalIDs"],
+          input: segment.sourceIntervalIDs,
         });
       }
     }
@@ -112,13 +194,84 @@ const pendingTranscriptPathFor = (location: RecordingLocation): string =>
 const readJSON = async (candidate: string): Promise<unknown> =>
   JSON.parse(await readFile(candidate, "utf8")) as unknown;
 
+const validateTranscriptContext = (
+  transcript: TranscriptDocument,
+  manifest: RecordingManifest,
+  intervals: RecordingInterval[],
+): TranscriptDocument => {
+  if (transcript.recordingID !== manifest.recordingID) {
+    throw new Error("Transcript recordingID does not match recording.json");
+  }
+  const intervalByID = new Map(
+    intervals.map((interval) => [interval.intervalID, interval]),
+  );
+  for (const segment of transcript.segments) {
+    if (
+      manifest.durationMs !== null &&
+      segment.endOffsetMs > manifest.durationMs
+    ) {
+      throw new Error("Transcript segment exceeds the recording duration");
+    }
+    for (const intervalID of segment.sourceIntervalIDs ?? []) {
+      const interval = intervalByID.get(intervalID);
+      if (!interval) {
+        throw new Error(`Transcript references unknown interval ${intervalID}`);
+      }
+      if (interval.kind !== "speaking") {
+        throw new Error(
+          `Transcript source interval ${intervalID} is not speaking audio`,
+        );
+      }
+      const overlaps =
+        segment.startOffsetMs === segment.endOffsetMs
+          ? interval.startOffsetMs <= segment.startOffsetMs &&
+            interval.endOffsetMs >= segment.endOffsetMs
+          : interval.startOffsetMs < segment.endOffsetMs &&
+            interval.endOffsetMs > segment.startOffsetMs;
+      if (!overlaps) {
+        throw new Error(
+          `Transcript source interval ${intervalID} does not overlap its segment`,
+        );
+      }
+      if (
+        segment.speaker?.userID &&
+        interval.userID !== segment.speaker.userID
+      ) {
+        throw new Error(
+          `Transcript speaker does not match source interval ${intervalID}`,
+        );
+      }
+    }
+  }
+  return transcript;
+};
+
+export const readTranscript = async (
+  location: RecordingLocation,
+): Promise<TranscriptDocument> => {
+  const [manifest, intervals, document] = await Promise.all([
+    readManifest(location),
+    loadIntervals(location),
+    readJSON(path.join(location.directory, "transcript.json")),
+  ]);
+  return validateTranscriptContext(
+    transcriptDocumentSchema.parse(document),
+    manifest,
+    intervals,
+  );
+};
+
 export const readTranscriptionState = async (
   location: RecordingLocation,
 ): Promise<TranscriptionState | null> => {
   try {
-    return transcriptionStateSchema.parse(
+    const state = transcriptionStateSchema.parse(
       await readJSON(statePathFor(location)),
     );
+    if (state.recordingID !== path.basename(location.directory)) {
+      throw new Error("Transcription recordingID does not match its directory");
+    }
+    return state;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
@@ -130,7 +283,12 @@ const writeTranscriptionState = async (
   state: TranscriptionState,
 ): Promise<void> => {
   state.updatedAt = new Date().toISOString();
-  await writeJSON(statePathFor(location), state);
+  const validated = transcriptionStateSchema.parse(state);
+  if (validated.recordingID !== path.basename(location.directory)) {
+    throw new Error("Transcription recordingID does not match its directory");
+  }
+  Object.assign(state, validated);
+  await writeJSON(statePathFor(location), validated);
 };
 
 const atomicWriteText = async (
@@ -339,21 +497,11 @@ export class TranscriptionWorker {
             `Transcription hook exited with code ${String(result.code)}${result.signal ? ` (${result.signal})` : ""}`,
         );
       }
-      const transcript = transcriptDocumentSchema.parse(
-        await readJSON(pendingTranscript),
+      const transcript = validateTranscriptContext(
+        transcriptDocumentSchema.parse(await readJSON(pendingTranscript)),
+        manifest,
+        await loadIntervals(location),
       );
-      if (transcript.recordingID !== manifest.recordingID) {
-        throw new Error("Transcript recordingID does not match recording.json");
-      }
-      const durationMs = manifest.durationMs;
-      if (
-        durationMs !== null &&
-        transcript.segments.some(
-          (segment) => segment.endOffsetMs > durationMs,
-        )
-      ) {
-        throw new Error("Transcript segment exceeds the recording duration");
-      }
       await rename(
         pendingTranscript,
         path.join(location.directory, "transcript.json"),

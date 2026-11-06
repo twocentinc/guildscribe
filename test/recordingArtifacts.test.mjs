@@ -50,7 +50,7 @@ const createVerifiedRecording = async () => {
   );
   const interval = {
     version: 1,
-    intervalID: "speaker-interval",
+    intervalID: "33333333-3333-4333-8333-333333333333",
     recordingID: active.manifest.recordingID,
     kind: "speaking",
     ...speaker,
@@ -58,7 +58,7 @@ const createVerifiedRecording = async () => {
     endOffsetMs: 200,
     incomplete: false,
     reason: null,
-    pcmFile: "speaker-interval.pcm",
+    pcmFile: "33333333-3333-4333-8333-333333333333.pcm",
     updatedAt: active.manifest.startedAt,
   };
   await writeFile(
@@ -85,7 +85,7 @@ const createVerifiedRecording = async () => {
     active.location,
     active.manifest,
   );
-  return { active, home, location, paths };
+  return { active, home, interval, location, paths };
 };
 
 test("recording verification checks media, PCM, metadata, and checksums", async () => {
@@ -107,6 +107,78 @@ test("recording verification checks media, PCM, metadata, and checksums", async 
       result.files.some(
         ({ relativePath }) => relativePath === "participants.json",
       ),
+    );
+  } finally {
+    await rm(fixture.home, { recursive: true, force: true });
+  }
+});
+
+test("recording verification applies the canonical transcript schema and text projection", async () => {
+  const fixture = await createVerifiedRecording();
+  try {
+    await writeFile(
+      path.join(fixture.location.directory, "transcription.json"),
+      `${JSON.stringify({
+        version: 1,
+        recordingID: fixture.active.manifest.recordingID,
+        status: "complete",
+        attempts: 1,
+        createdAt: "2026-11-05T12:00:00.200Z",
+        updatedAt: "2026-11-05T12:00:00.400Z",
+        startedAt: "2026-11-05T12:00:00.300Z",
+        completedAt: "2026-11-05T12:00:00.400Z",
+        error: null,
+      })}\n`,
+    );
+    await writeFile(
+      path.join(fixture.location.directory, "transcript.json"),
+      `${JSON.stringify({
+        version: 1,
+        recordingID: fixture.active.manifest.recordingID,
+        createdAt: "2026-11-05T12:00:00.400Z",
+        language: "en",
+        text: "hello",
+        segments: [
+          {
+            startOffsetMs: 0,
+            endOffsetMs: 200,
+            text: "hello",
+            sourceIntervalIDs: [fixture.interval.intervalID],
+            speaker: {
+              userID: fixture.interval.userID,
+              username: fixture.interval.username,
+              displayName: fixture.interval.displayName,
+            },
+          },
+        ],
+      })}\n`,
+    );
+    await writeFile(
+      path.join(fixture.location.directory, "transcript.txt"),
+      "hello\n",
+    );
+
+    const valid = await verifyRecording(
+      fixture.paths,
+      fixture.active.manifest.recordingID,
+    );
+    assert.equal(
+      valid.checks.find(({ name }) => name === "transcription")?.status,
+      "pass",
+    );
+
+    await writeFile(
+      path.join(fixture.location.directory, "transcript.txt"),
+      "different\n",
+    );
+    const inconsistent = await verifyRecording(
+      fixture.paths,
+      fixture.active.manifest.recordingID,
+    );
+    assert.equal(
+      inconsistent.checks.find(({ name }) => name === "transcription")
+        ?.status,
+      "fail",
     );
   } finally {
     await rm(fixture.home, { recursive: true, force: true });
@@ -137,7 +209,7 @@ test("recording export creates a portable checksummed directory and optional WAV
     assert.ok((await stat(path.join(destination, "audio.mp3"))).size > 0);
     assert.ok((await stat(path.join(destination, "audio.wav"))).size > 0);
     assert.ok(
-      (await stat(path.join(destination, "intervals", "speaker-interval.pcm")))
+      (await stat(path.join(destination, "intervals", "33333333-3333-4333-8333-333333333333.pcm")))
         .size > 0,
     );
     const checksums = await readFile(

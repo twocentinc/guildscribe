@@ -3,11 +3,16 @@ import { open, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 import type { RecordingInterval, RecordingLocation } from "./recording.js";
-import { intervalPCMPath } from "./recording.js";
 import { GuildscribeError, sanitizeError } from "./protocol.js";
 
-const PCM_RATE = 48_000;
-const PCM_CHANNELS = 2;
+export const PCM_FORMAT = {
+  encoding: "s16le",
+  sampleRateHz: 48_000,
+  channels: 2,
+} as const;
+
+const PCM_RATE = PCM_FORMAT.sampleRateHz;
+const PCM_CHANNELS = PCM_FORMAT.channels;
 const PCM_BYTES_PER_SAMPLE = 2;
 const PCM_FRAME_BYTES = PCM_CHANNELS * PCM_BYTES_PER_SAMPLE;
 const WINDOW_FRAMES = PCM_RATE * 10;
@@ -110,7 +115,12 @@ const collectSources = async (
   const sources: PCMSource[] = [];
   for (const interval of intervals) {
     if (interval.kind !== "speaking") continue;
-    const pcmPath = intervalPCMPath(location, interval);
+    const pcmPath = interval.pcmFile
+      ? path.join(
+          location.intervalsDirectory,
+          path.basename(interval.pcmFile),
+        )
+      : null;
     if (!pcmPath) continue;
     try {
       const info = await stat(pcmPath);
@@ -200,7 +210,11 @@ export const renderMaster = async (
   location: RecordingLocation,
   durationMs: number,
   intervals: RecordingInterval[],
-): Promise<{ audioFile: string; durationSeconds: number; reused: boolean }> => {
+): Promise<{
+  audioFile: "audio.mp3";
+  durationSeconds: number;
+  reused: boolean;
+}> => {
   const finalPath = path.join(location.directory, "audio.mp3");
   const existingDuration = await existingValidDuration(finalPath);
   if (existingDuration !== null) {

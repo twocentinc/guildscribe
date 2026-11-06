@@ -236,9 +236,26 @@ is required; it does not silently restart the recorder.
 
 `recording.json`, `participants.json`, `transcription.json`, `transcript.json`,
 and every interval sidecar are versioned JSON documents.
-Guildscribe writes them through a same-directory temporary file and atomic
-rename. The recording manifest records identity, lifecycle state, timestamps,
-duration, final audio filename, interruption status, and sanitized failure.
+Guildscribe writes its documents through a same-directory temporary file and
+atomic rename. Every persistent document is parsed through a strict Zod schema
+on read and write. Recording IDs are UUIDs and must match their directory;
+Discord IDs are decimal snowflakes. The recording manifest records identity,
+lifecycle state, timestamps, duration, final audio filename, interruption
+status, sanitized failure, and the retained PCM format:
+
+```json
+{
+  "encoding": "s16le",
+  "sampleRateHz": 48000,
+  "channels": 2
+}
+```
+
+Legacy version-1 manifests without `pcmFormat` normalize to this fixed format;
+every new manifest write persists it. Lifecycle validation requires recording
+state to have no completion fields, finalizing state to have end and duration,
+complete state to also reference `audio.mp3`, and failed state to contain a
+sanitized error.
 
 Speaking interval sidecars record:
 
@@ -381,6 +398,7 @@ executable atomically writes this complete result document to
       "startOffsetMs": 0,
       "endOffsetMs": 1200,
       "text": "Readable segment text.",
+      "sourceIntervalIDs": ["00000000-0000-4000-8000-000000000000"],
       "speaker": {
         "userID": "...",
         "username": "speaker",
@@ -392,10 +410,14 @@ executable atomically writes this complete result document to
 ```
 
 `recordingID` must match `recording.json`. `language` may be `null`; `speaker`
-is optional and its identity fields may be `null`. Segments must have valid
-nonnegative ranges, be ordered by `startOffsetMs`, and remain within the
-recording duration. Exit code zero is accepted only when the pending document
-exists and passes this Zod-enforced schema.
+is optional but must contain at least one identity field when present.
+`sourceIntervalIDs` is optional for combined-audio transcription; when present,
+every unique UUID must identify overlapping speaking audio in the same
+recording and any Discord speaker ID must agree with that source. Segments must
+contain nonempty text, have valid nonnegative ranges, be ordered by
+`startOffsetMs`, and remain within the recording duration. Exit code zero is
+accepted only when the pending document exists and passes this Zod-enforced
+schema.
 
 The pending document is the hook's response; stdout and stderr are bounded
 diagnostics only. The hook must not write canonical `transcript.json`,
@@ -493,7 +515,8 @@ PID-matched heartbeat is `stale`.
 `recordings verify` is read-only. It validates manifest identity and lifecycle,
 interval sidecars and counts, PCM existence and stereo-frame alignment,
 connection-gap invariants, combined MP3 duration through FFprobe, participant
-metadata, and transcript consistency. It also returns byte counts and SHA-256
+metadata, the complete transcript schema and source references, and exact
+`transcript.txt` consistency. It also returns byte counts and SHA-256
 digests for every durable file. Failed checks make the command envelope
 unsuccessful without changing the recording.
 

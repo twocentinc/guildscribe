@@ -22,6 +22,7 @@ import {
 } from "../dist/recording.js";
 import {
   readTranscriptionState,
+  transcriptDocumentSchema,
   TranscriptionWorker,
 } from "../dist/transcription.js";
 import { showRecording } from "../dist/recording.js";
@@ -44,14 +45,15 @@ const prepareRecording = async (hookSource) => {
     "222222222222222222",
     new Date("2026-11-05T12:00:00.000Z"),
   );
-  const pcmFile = "speaker.pcm";
+  const intervalID = "55555555-5555-4555-8555-555555555555";
+  const pcmFile = `${intervalID}.pcm`;
   await writeFile(
     path.join(active.location.intervalsDirectory, pcmFile),
     Buffer.alloc(128, 1),
   );
   await saveInterval(active.location, {
     version: 1,
-    intervalID: "speaker-interval",
+    intervalID,
     recordingID: active.manifest.recordingID,
     kind: "speaking",
     userID: "333333333333333333",
@@ -87,7 +89,7 @@ const prepareRecording = async (hookSource) => {
     transcriptionHook: hook,
     hooks: {},
   };
-  return { active, config, home, hook, location, paths, pcmFile };
+  return { active, config, home, hook, intervalID, location, paths, pcmFile };
 };
 
 const successHook = `
@@ -107,7 +109,12 @@ await writeFile(temporary, JSON.stringify({
   language: "en",
   text: "hello world",
   segments: [
-    { startOffsetMs: 0, endOffsetMs: 500, text: "hello" },
+    {
+      startOffsetMs: 0,
+      endOffsetMs: 500,
+      text: "hello",
+      sourceIntervalIDs: ["55555555-5555-4555-8555-555555555555"]
+    },
     {
       startOffsetMs: 500,
       endOffsetMs: 1000,
@@ -118,6 +125,43 @@ await writeFile(temporary, JSON.stringify({
 }));
 await rename(temporary, path.join(recordingDirectory, ".transcript.json.pending"));
 `;
+
+test("transcript schema rejects empty segments and empty speaker identity", () => {
+  const base = {
+    version: 1,
+    recordingID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    createdAt: "2026-11-05T12:00:02.000Z",
+    language: "en",
+    text: "hello",
+  };
+  assert.equal(
+    transcriptDocumentSchema.safeParse({
+      ...base,
+      segments: [
+        {
+          startOffsetMs: 0,
+          endOffsetMs: 100,
+          text: " ",
+        },
+      ],
+    }).success,
+    false,
+  );
+  assert.equal(
+    transcriptDocumentSchema.safeParse({
+      ...base,
+      segments: [
+        {
+          startOffsetMs: 0,
+          endOffsetMs: 100,
+          text: "hello",
+          speaker: { userID: null, username: null, displayName: null },
+        },
+      ],
+    }).success,
+    false,
+  );
+});
 
 test("transcription hook publishes validated transcripts and retains PCM", async () => {
   const fixture = await prepareRecording(successHook);
@@ -138,6 +182,9 @@ test("transcription hook publishes validated transcripts and retains PCM", async
     assert.equal(transcript.version, 1);
     assert.equal(transcript.recordingID, fixture.active.manifest.recordingID);
     assert.equal(transcript.createdAt, "2026-11-05T12:00:02.000Z");
+    assert.deepEqual(transcript.segments[0].sourceIntervalIDs, [
+      fixture.intervalID,
+    ]);
     assert.equal(transcript.segments[0].speaker, undefined);
     assert.equal(transcript.segments[1].speaker.displayName, "Speaker");
     assert.equal(
@@ -217,6 +264,39 @@ await writeFile(path.join(recordingDirectory, ".transcript.json.pending"), JSON.
       stat(path.join(fixture.location.directory, "transcript.json")),
       { code: "ENOENT" },
     );
+  } finally {
+    await rm(fixture.home, { recursive: true, force: true });
+  }
+});
+
+test("transcript source intervals must exist in the recording", async () => {
+  const fixture = await prepareRecording(`
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+const recordingDirectory = process.argv[2];
+const recording = JSON.parse(await readFile(path.join(recordingDirectory, "recording.json"), "utf8"));
+await writeFile(path.join(recordingDirectory, ".transcript.json.pending"), JSON.stringify({
+  version: 1,
+  recordingID: recording.recordingID,
+  createdAt: "2026-11-05T12:00:02.000Z",
+  language: "en",
+  text: "hello",
+  segments: [{
+    startOffsetMs: 0,
+    endOffsetMs: 100,
+    text: "hello",
+    sourceIntervalIDs: ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]
+  }]
+}));
+`);
+  try {
+    const worker = new TranscriptionWorker(fixture.paths, fixture.config);
+    await worker.enqueue(fixture.location, fixture.active.manifest);
+    await worker.waitForIdle();
+
+    const state = await readTranscriptionState(fixture.location);
+    assert.equal(state.status, "failed");
+    assert.match(state.error, /unknown interval/);
   } finally {
     await rm(fixture.home, { recursive: true, force: true });
   }

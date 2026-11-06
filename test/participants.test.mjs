@@ -53,7 +53,7 @@ test("participant metadata retains presence sessions and speaking duration", asy
       [
         {
           version: 1,
-          intervalID: "one",
+          intervalID: "44444444-4444-4444-8444-444444444444",
           recordingID: active.manifest.recordingID,
           kind: "speaking",
           ...speaker,
@@ -61,7 +61,7 @@ test("participant metadata retains presence sessions and speaking duration", asy
           endOffsetMs: 1_250,
           incomplete: false,
           reason: null,
-          pcmFile: "one.pcm",
+          pcmFile: "44444444-4444-4444-8444-444444444444.pcm",
           updatedAt: "2026-11-05T12:00:01.250Z",
         },
       ],

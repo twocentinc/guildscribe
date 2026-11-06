@@ -21,9 +21,12 @@ import {
   readParticipants,
   showRecording,
 } from "./recording.js";
-import { validateMP3, runCommand } from "./renderer.js";
+import { PCM_FORMAT, validateMP3, runCommand } from "./renderer.js";
 import { GuildscribeError, sanitizeError } from "./protocol.js";
-import { readTranscriptionState } from "./transcription.js";
+import {
+  readTranscript,
+  readTranscriptionState,
+} from "./transcription.js";
 
 export interface VerificationCheck {
   name: string;
@@ -137,8 +140,13 @@ export const verifyRecording = async (
     }
     try {
       const info = await stat(pcmPath);
-      const valid = info.isFile() && info.size > 0 && info.size % 4 === 0;
-      const durationMs = Math.floor((info.size * 1_000) / (48_000 * 2 * 2));
+      const frameBytes = PCM_FORMAT.channels * 2;
+      const valid =
+        info.isFile() && info.size > 0 && info.size % frameBytes === 0;
+      const durationMs = Math.floor(
+        (info.size * 1_000) /
+          (PCM_FORMAT.sampleRateHz * PCM_FORMAT.channels * 2),
+      );
       add(
         `interval.${interval.intervalID}`,
         valid ? "pass" : "fail",
@@ -203,30 +211,20 @@ export const verifyRecording = async (
     if (!transcription) {
       add("transcription", "pass", "No transcription was requested");
     } else if (transcription.status === "complete") {
-      const transcriptJSON = path.join(
-        discovered.location.directory,
-        "transcript.json",
-      );
       const transcriptText = path.join(
         discovered.location.directory,
         "transcript.txt",
       );
-      const document = JSON.parse(await readFile(transcriptJSON, "utf8")) as {
-        recordingID?: unknown;
-        text?: unknown;
-        segments?: unknown;
-      };
-      await stat(transcriptText);
+      const document = await readTranscript(discovered.location);
+      const readableText = await readFile(transcriptText, "utf8");
       const valid =
-        document.recordingID === recordingID &&
-        typeof document.text === "string" &&
-        Array.isArray(document.segments);
+        readableText === `${document.text.replace(/\s+$/, "")}\n`;
       add(
         "transcription",
         valid ? "pass" : "fail",
         valid
-          ? "Completed transcript artifacts are present"
-          : "Canonical transcript document is invalid",
+          ? "Completed transcript artifacts are valid and consistent"
+          : "transcript.txt does not match transcript.json",
       );
     } else {
       add(

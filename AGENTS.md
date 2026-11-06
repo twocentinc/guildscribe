@@ -35,6 +35,9 @@ Saratonin so it can be published and installed on its own.
 - Store recording state and artifacts as ordinary files below
   `~/.guildscribe`; do not add a database without a new concrete requirement.
 - Write JSON manifests and interval sidecars atomically.
+- Validate every persistent recording document with its strict Zod schema on
+  both read and write. Require recording identity to match its directory and
+  keep retained PCM self-describing through the manifest's fixed format.
 - Keep source files and runtime data separate. Never write runtime files into
   the repository checkout.
 - Keep the configuration file and runtime home owner-only because `.env`

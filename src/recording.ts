@@ -31,7 +31,7 @@ import { z } from "zod";
 
 import type { GuildscribeConfig, GuildscribePaths } from "./config.js";
 import { invokeHook } from "./hooks.js";
-import { renderMaster } from "./renderer.js";
+import { PCM_FORMAT, renderMaster } from "./renderer.js";
 import { diagnostic, GuildscribeError, sanitizeError } from "./protocol.js";
 import type { TranscriptionStatus } from "./transcription.js";
 
@@ -43,40 +43,166 @@ export type RecordingStatus =
   | "complete"
   | "failed";
 
-export interface RecordingManifest {
-  version: 1;
-  recordingID: string;
-  guildID: string;
-  guildName?: string | null;
-  channelID: string;
-  channelName?: string | null;
-  status: RecordingStatus;
-  startedAt: string;
-  updatedAt: string;
-  emptySince: string | null;
-  endedAt: string | null;
-  durationMs: number | null;
-  interrupted: boolean;
-  audioFile: string | null;
-  intervalCount: number;
-  error: string | null;
-}
+export const recordingIDSchema = z.uuid();
+export const discordIDSchema = z.string().regex(/^\d{17,20}$/, {
+  message: "Discord IDs must contain 17 to 20 decimal digits",
+});
 
-export interface RecordingInterval {
-  version: 1;
-  intervalID: string;
-  recordingID: string;
-  kind: "speaking" | "connectionGap";
-  userID: string | null;
-  username: string | null;
-  displayName: string | null;
-  startOffsetMs: number;
-  endOffsetMs: number;
-  incomplete: boolean;
-  reason: string | null;
-  pcmFile: string | null;
-  updatedAt: string;
-}
+const pcmFormatSchema = z
+  .object({
+    encoding: z.literal("s16le"),
+    sampleRateHz: z.literal(48_000),
+    channels: z.literal(2),
+  })
+  .strict();
+
+export const recordingManifestSchema = z
+  .object({
+    version: z.literal(1),
+    recordingID: recordingIDSchema,
+    guildID: discordIDSchema,
+    guildName: z.string().min(1).nullable().optional().default(null),
+    channelID: discordIDSchema,
+    channelName: z.string().min(1).nullable().optional().default(null),
+    status: z.enum(["recording", "finalizing", "complete", "failed"]),
+    startedAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+    emptySince: z.iso.datetime().nullable(),
+    endedAt: z.iso.datetime().nullable(),
+    durationMs: z.number().int().min(0).nullable(),
+    interrupted: z.boolean(),
+    audioFile: z.literal("audio.mp3").nullable(),
+    intervalCount: z.number().int().min(0),
+    error: z.string().min(1).nullable(),
+    pcmFormat: pcmFormatSchema.optional().default(PCM_FORMAT),
+  })
+  .strict()
+  .superRefine((manifest, context) => {
+    const issue = (path: (string | number)[], message: string): void =>
+      context.addIssue({
+        code: "custom",
+        path,
+        message,
+        input: undefined,
+      });
+    const startedAt = Date.parse(manifest.startedAt);
+    const updatedAt = Date.parse(manifest.updatedAt);
+    const endedAt = manifest.endedAt ? Date.parse(manifest.endedAt) : null;
+    const emptySince = manifest.emptySince
+      ? Date.parse(manifest.emptySince)
+      : null;
+    if (updatedAt < startedAt) {
+      issue(["updatedAt"], "updatedAt must not precede startedAt");
+    }
+    if (endedAt !== null && endedAt < startedAt) {
+      issue(["endedAt"], "endedAt must not precede startedAt");
+    }
+    if (emptySince !== null && emptySince < startedAt) {
+      issue(["emptySince"], "emptySince must not precede startedAt");
+    }
+    if (
+      endedAt !== null &&
+      manifest.durationMs !== null &&
+      Math.abs(
+        Math.max(100, endedAt - startedAt) - manifest.durationMs,
+      ) > 1
+    ) {
+      issue(
+        ["durationMs"],
+        "durationMs must equal the media duration derived from the timestamps",
+      );
+    }
+    if (manifest.status === "recording") {
+      if (manifest.endedAt !== null)
+        issue(["endedAt"], "recording must not have endedAt");
+      if (manifest.durationMs !== null)
+        issue(["durationMs"], "recording must not have durationMs");
+      if (manifest.audioFile !== null)
+        issue(["audioFile"], "recording must not have audioFile");
+      if (manifest.error !== null)
+        issue(["error"], "recording must not have error");
+    }
+    if (manifest.status === "finalizing" || manifest.status === "complete") {
+      if (manifest.endedAt === null)
+        issue(["endedAt"], `${manifest.status} requires endedAt`);
+      if (manifest.durationMs === null)
+        issue(["durationMs"], `${manifest.status} requires durationMs`);
+      if (manifest.error !== null)
+        issue(["error"], `${manifest.status} must not have error`);
+    }
+    if (manifest.status === "finalizing" && manifest.audioFile !== null) {
+      issue(["audioFile"], "finalizing must not have audioFile");
+    }
+    if (manifest.status === "complete" && manifest.audioFile === null) {
+      issue(["audioFile"], "complete requires audioFile");
+    }
+    if (manifest.status === "failed" && manifest.error === null) {
+      issue(["error"], "failed requires error");
+    }
+  });
+
+export type RecordingManifest = z.infer<typeof recordingManifestSchema>;
+
+const intervalBaseSchema = z.object({
+  version: z.literal(1),
+  intervalID: z.uuid(),
+  recordingID: recordingIDSchema,
+  startOffsetMs: z.number().int().min(0),
+  endOffsetMs: z.number().int().min(0),
+  incomplete: z.boolean(),
+  updatedAt: z.iso.datetime(),
+});
+
+const speakingIntervalSchema = intervalBaseSchema
+  .extend({
+    kind: z.literal("speaking"),
+    userID: discordIDSchema,
+    username: z.string().min(1).nullable(),
+    displayName: z.string().min(1).nullable(),
+    reason: z.null(),
+    pcmFile: z.string().min(1),
+  })
+  .strict();
+
+const connectionGapIntervalSchema = intervalBaseSchema
+  .extend({
+    kind: z.literal("connectionGap"),
+    userID: z.null(),
+    username: z.null(),
+    displayName: z.null(),
+    reason: z.string().min(1),
+    pcmFile: z.null(),
+  })
+  .strict();
+
+export const recordingIntervalSchema = z
+  .discriminatedUnion("kind", [
+    speakingIntervalSchema,
+    connectionGapIntervalSchema,
+  ])
+  .superRefine((interval, context) => {
+    if (interval.endOffsetMs < interval.startOffsetMs) {
+      context.addIssue({
+        code: "custom",
+        path: ["endOffsetMs"],
+        message: "endOffsetMs must not precede startOffsetMs",
+        input: interval.endOffsetMs,
+      });
+    }
+    if (
+      interval.kind === "speaking" &&
+      interval.pcmFile !== `${interval.intervalID}.pcm`
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["pcmFile"],
+        message: "pcmFile must match intervalID",
+        input: interval.pcmFile,
+      });
+    }
+  });
+
+export type RecordingInterval = z.infer<typeof recordingIntervalSchema>;
 
 export interface RecordingLocation {
   directory: string;
@@ -150,8 +276,12 @@ export const createRecording = async (
     audioFile: null,
     intervalCount: 0,
     error: null,
+    pcmFormat: PCM_FORMAT,
   };
-  await writeJSON(location.manifestPath, manifest);
+  await writeJSON(
+    location.manifestPath,
+    recordingManifestSchema.parse(manifest),
+  );
   return { location, manifest };
 };
 
@@ -160,16 +290,35 @@ export const saveManifest = async (
   manifest: RecordingManifest,
 ): Promise<void> => {
   manifest.updatedAt = new Date().toISOString();
-  await writeJSON(location.manifestPath, manifest);
+  const validated = recordingManifestSchema.parse(manifest);
+  if (validated.recordingID !== path.basename(location.directory)) {
+    throw new GuildscribeError(
+      "invalid_recording_identity",
+      "Recording manifest ID does not match its directory",
+      {
+        details: {
+          directory: location.directory,
+          recordingID: validated.recordingID,
+        },
+        retrySafety: "never",
+      },
+    );
+  }
+  Object.assign(manifest, validated);
+  await writeJSON(location.manifestPath, validated);
 };
 
 export const readManifest = async (
   location: RecordingLocation,
 ): Promise<RecordingManifest> => {
   try {
-    return JSON.parse(
-      await readFile(location.manifestPath, "utf8"),
-    ) as RecordingManifest;
+    const manifest = recordingManifestSchema.parse(
+      JSON.parse(await readFile(location.manifestPath, "utf8")) as unknown,
+    );
+    if (manifest.recordingID !== path.basename(location.directory)) {
+      throw new Error("recordingID does not match the recording directory");
+    }
+    return manifest;
   } catch (error) {
     throw new GuildscribeError(
       "invalid_recording_manifest",
@@ -184,9 +333,25 @@ export const saveInterval = async (
   interval: RecordingInterval,
 ): Promise<void> => {
   interval.updatedAt = new Date().toISOString();
+  const validated = recordingIntervalSchema.parse(interval);
+  if (validated.recordingID !== path.basename(location.directory)) {
+    throw new GuildscribeError(
+      "invalid_recording_identity",
+      "Interval recording ID does not match its directory",
+      {
+        details: {
+          directory: location.directory,
+          intervalID: validated.intervalID,
+          recordingID: validated.recordingID,
+        },
+        retrySafety: "never",
+      },
+    );
+  }
+  Object.assign(interval, validated);
   await writeJSON(
-    path.join(location.intervalsDirectory, `${interval.intervalID}.json`),
-    interval,
+    path.join(location.intervalsDirectory, `${validated.intervalID}.json`),
+    validated,
   );
 };
 
@@ -203,10 +368,15 @@ export const loadIntervals = async (
   const intervals: RecordingInterval[] = [];
   for (const name of names.filter((entry) => entry.endsWith(".json")).sort()) {
     try {
-      const parsed = JSON.parse(
-        await readFile(path.join(location.intervalsDirectory, name), "utf8"),
-      ) as RecordingInterval;
-      if (parsed.version === 1 && parsed.intervalID && parsed.recordingID) {
+      const parsed = recordingIntervalSchema.parse(
+        JSON.parse(
+          await readFile(path.join(location.intervalsDirectory, name), "utf8"),
+        ) as unknown,
+      );
+      if (
+        name === `${parsed.intervalID}.json` &&
+        parsed.recordingID === path.basename(location.directory)
+      ) {
         intervals.push(parsed);
       }
     } catch {
@@ -256,7 +426,8 @@ export const capturedDurationMs = async (
       try {
         const info = await stat(pcmPath);
         const audioDuration = Math.floor(
-          (info.size * 1_000) / (48_000 * 2 * 2),
+          (info.size * 1_000) /
+            (PCM_FORMAT.sampleRateHz * PCM_FORMAT.channels * 2),
         );
         end = interval.startOffsetMs + audioDuration;
       } catch {
@@ -273,11 +444,26 @@ export const publishRecording = async (
   location: RecordingLocation,
   manifest: RecordingManifest,
 ): Promise<RecordingLocation> => {
-  const started = new Date(manifest.startedAt);
+  const validated = recordingManifestSchema.parse(manifest);
+  if (validated.recordingID !== path.basename(location.directory)) {
+    throw new GuildscribeError(
+      "invalid_recording_identity",
+      "Recording manifest ID does not match its directory",
+      { retrySafety: "never" },
+    );
+  }
+  if (validated.status !== "complete") {
+    throw new GuildscribeError(
+      "recording_not_complete",
+      "Only complete recordings can be published",
+      { retrySafety: "never" },
+    );
+  }
+  const started = new Date(validated.startedAt);
   const year = String(started.getUTCFullYear());
   const month = String(started.getUTCMonth() + 1).padStart(2, "0");
   const parent = path.join(paths.recordings, year, month);
-  const destination = path.join(parent, manifest.recordingID);
+  const destination = path.join(parent, validated.recordingID);
   await mkdir(parent, { recursive: true, mode: 0o700 });
   try {
     await rename(location.directory, destination);
@@ -287,7 +473,7 @@ export const publishRecording = async (
         "recording_destination_exists",
         "Completed recording destination already exists",
         {
-          details: { recordingID: manifest.recordingID },
+          details: { recordingID: validated.recordingID },
           retrySafety: "never",
         },
       );
@@ -304,22 +490,47 @@ const presenceSessionSchema = z
     joinedAt: z.iso.datetime(),
     leftAt: z.iso.datetime().nullable(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (session) =>
+      session.leftAt === null ||
+      Date.parse(session.leftAt) >= Date.parse(session.joinedAt),
+    { message: "leftAt must not precede joinedAt", path: ["leftAt"] },
+  );
 
 const participantSchema = z
   .object({
-    userID: z.string().min(1),
-    username: z.string().nullable(),
-    displayName: z.string().nullable(),
+    userID: discordIDSchema,
+    username: z.string().min(1).nullable(),
+    displayName: z.string().min(1).nullable(),
     sessions: z.array(presenceSessionSchema),
     speakingDurationMs: z.number().int().min(0),
   })
-  .strict();
+  .strict()
+  .superRefine((participant, context) => {
+    for (let index = 1; index < participant.sessions.length; index += 1) {
+      const previous = participant.sessions[index - 1];
+      const current = participant.sessions[index];
+      if (
+        previous?.leftAt === null ||
+        (previous?.leftAt &&
+          current &&
+          Date.parse(current.joinedAt) < Date.parse(previous.leftAt))
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["sessions", index, "joinedAt"],
+          message: "participant sessions must be ordered and non-overlapping",
+          input: current?.joinedAt,
+        });
+      }
+    }
+  });
 
 const participantDocumentSchema = z
   .object({
     version: z.literal(1),
-    recordingID: z.string().min(1),
+    recordingID: recordingIDSchema,
     updatedAt: z.iso.datetime(),
     participants: z.array(participantSchema),
   })
@@ -340,9 +551,13 @@ export const readParticipants = async (
   location: RecordingLocation,
 ): Promise<ParticipantDocument | null> => {
   try {
-    return participantDocumentSchema.parse(
+    const document = participantDocumentSchema.parse(
       JSON.parse(await readFile(documentPath(location), "utf8")) as unknown,
     );
+    if (document.recordingID !== path.basename(location.directory)) {
+      throw new Error("Participant recordingID does not match its directory");
+    }
+    return document;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
@@ -357,7 +572,15 @@ const saveParticipants = async (
   document.participants.sort((left, right) =>
     left.userID.localeCompare(right.userID),
   );
-  await writeJSON(documentPath(location), document);
+  const validated = participantDocumentSchema.parse(document);
+  if (validated.recordingID !== path.basename(location.directory)) {
+    throw new GuildscribeError(
+      "invalid_recording_identity",
+      "Participant recording ID does not match its directory",
+      { retrySafety: "never" },
+    );
+  }
+  await writeJSON(documentPath(location), validated);
 };
 
 export const initializeParticipants = async (
@@ -692,8 +915,8 @@ export const findRecording = async (
 
 const SEGMENT_SILENCE_MS = 500;
 const CHECKPOINT_MS = 2_000;
-const PCM_RATE = 48_000;
-const PCM_CHANNELS = 2;
+const PCM_RATE = PCM_FORMAT.sampleRateHz;
+const PCM_CHANNELS = PCM_FORMAT.channels;
 const PCM_BYTES_PER_SAMPLE = 2;
 
 interface RecorderDependencies {
