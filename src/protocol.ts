@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1;
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const EXIT_CODES = {
   success: 0,
@@ -69,17 +69,17 @@ const exitCodeFor = (code: string): number => {
   return EXIT_CODES.internal;
 };
 
-const snowflakeSchema = z
+export const discordIDSchema = z
   .string()
   .regex(/^\d{15,22}$/, "Expected a Discord ID");
 export const messageChannelIDsSchema = z
-  .array(snowflakeSchema)
+  .array(discordIDSchema)
   .refine(
     (ids) => new Set(ids).size === ids.length,
     "Message channel IDs must be unique",
   );
 export const voiceChannelIDsSchema = z
-  .array(snowflakeSchema)
+  .array(discordIDSchema)
   .min(1, "At least one voice channel ID is required")
   .refine(
     (values) => new Set(values).size === values.length,
@@ -94,6 +94,7 @@ const nullableExecutablePathSchema = executablePathSchema.nullable();
 export const initRequestSchema = z
   .object({
     discordToken: z.string().trim().min(1),
+    ownerUserID: discordIDSchema.optional(),
     voiceChannelIDs: voiceChannelIDsSchema,
     messageChannelIDs: messageChannelIDsSchema.optional(),
     emptyGraceMs: z.number().int().min(0).max(3_600_000).optional(),
@@ -119,6 +120,7 @@ export type InitRequest = z.infer<typeof initRequestSchema>;
 export const configUpdateRequestSchema = z
   .object({
     discordToken: z.string().trim().min(1).optional(),
+    ownerUserID: discordIDSchema.nullable().optional(),
     voiceChannelIDs: voiceChannelIDsSchema.optional(),
     messageChannelIDs: messageChannelIDsSchema.optional(),
     emptyGraceMs: z.number().int().min(0).max(3_600_000).optional(),
@@ -177,8 +179,9 @@ const doctorResultSchema = z.object({
 });
 const configurationSchema = z.object({
   discordToken: z.literal("[redacted]"),
-  messageChannelIDs: z.array(snowflakeSchema),
-  voiceChannelIDs: z.array(snowflakeSchema),
+  ownerUserID: discordIDSchema.nullable(),
+  messageChannelIDs: z.array(discordIDSchema),
+  voiceChannelIDs: z.array(discordIDSchema),
   emptyGraceMs: z.number().int(),
   hookTimeoutMs: z.number().int(),
   transcriptionHook: z.string().nullable(),
@@ -283,7 +286,7 @@ const runtimeStatusResultSchema = z.object({
     lastError: z.string().nullable(),
   }),
   configuration: z.object({
-    voiceChannelIDs: z.array(snowflakeSchema),
+    voiceChannelIDs: z.array(discordIDSchema),
     emptyGraceMs: z.number().int(),
     transcriptionEnabled: z.boolean(),
   }),
@@ -322,8 +325,9 @@ const initResultSchema = z.object({
   configurationPath: z.string(),
   dryRun: z.boolean(),
   discordToken: z.literal("[redacted]"),
-  messageChannelIDs: z.array(snowflakeSchema),
-  voiceChannelIDs: z.array(snowflakeSchema),
+  ownerUserID: discordIDSchema.nullable(),
+  messageChannelIDs: z.array(discordIDSchema),
+  voiceChannelIDs: z.array(discordIDSchema),
 });
 const envelopeSuccessSchema = z.object({
   command: z.string(),
@@ -353,19 +357,19 @@ const versionResultSchema = z.object({
 });
 
 export const messageResultSchema = z.object({
-  messageID: snowflakeSchema,
-  guildID: snowflakeSchema,
-  channelID: snowflakeSchema,
-  parentChannelID: snowflakeSchema.nullable(),
+  messageID: discordIDSchema,
+  guildID: discordIDSchema,
+  channelID: discordIDSchema,
+  parentChannelID: discordIDSchema.nullable(),
   channelName: z.string().nullable(),
-  authorID: snowflakeSchema,
+  authorID: discordIDSchema,
   authorUsername: z.string(),
   authorDisplayName: z.string().nullable(),
   authorIsBot: z.boolean(),
-  webhookID: snowflakeSchema.nullable(),
+  webhookID: discordIDSchema.nullable(),
   messageType: z.number().int(),
   content: z.string(),
-  replyToMessageID: snowflakeSchema.nullable(),
+  replyToMessageID: discordIDSchema.nullable(),
   createdAt: z.number().int(),
   editedAt: z.number().int().nullable(),
   observedAt: z.number().int(),
@@ -435,7 +439,7 @@ export const schemas = {
   }),
   "transcript.search.result": page(
     segmentResultSchema.extend({
-      channelID: snowflakeSchema,
+      channelID: discordIDSchema,
       channelName: z.string().nullable(),
       recordingStartedAt: z.number().int(),
     }),

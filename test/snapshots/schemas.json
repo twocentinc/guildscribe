@@ -1,6 +1,6 @@
 {
   "protocolVersion": 1,
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "schemas": {
     "config.update.request": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -110,6 +110,17 @@
           },
           "type": "array"
         },
+        "ownerUserID": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{15,22}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "transcriptionHook": {
           "anyOf": [
             {
@@ -172,6 +183,17 @@
               },
               "type": "array"
             },
+            "ownerUserID": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{15,22}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "transcriptionHook": {
               "type": [
                 "string",
@@ -188,6 +210,7 @@
           },
           "required": [
             "discordToken",
+            "ownerUserID",
             "messageChannelIDs",
             "voiceChannelIDs",
             "emptyGraceMs",
@@ -246,6 +269,17 @@
           },
           "type": "array"
         },
+        "ownerUserID": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{15,22}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "transcriptionHook": {
           "type": [
             "string",
@@ -262,6 +296,7 @@
       },
       "required": [
         "discordToken",
+        "ownerUserID",
         "messageChannelIDs",
         "voiceChannelIDs",
         "emptyGraceMs",
@@ -720,6 +755,10 @@
           },
           "type": "array"
         },
+        "ownerUserID": {
+          "pattern": "^\\d{15,22}$",
+          "type": "string"
+        },
         "transcriptionHook": {
           "minLength": 1,
           "type": "string"
@@ -766,6 +805,17 @@
           },
           "type": "array"
         },
+        "ownerUserID": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{15,22}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "voiceChannelIDs": {
           "items": {
             "pattern": "^\\d{15,22}$",
@@ -780,6 +830,7 @@
         "configurationPath",
         "dryRun",
         "discordToken",
+        "ownerUserID",
         "messageChannelIDs",
         "voiceChannelIDs"
       ],
@@ -2543,7 +2594,7 @@
           "type": "number"
         },
         "schemaVersion": {
-          "const": 5,
+          "const": 6,
           "type": "number"
         },
         "version": {

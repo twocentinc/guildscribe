@@ -21,6 +21,16 @@ import {
   writeDaemonRuntimeState,
 } from "./status.js";
 
+export const sendOwnerOnlineNotification = async (
+  client: Pick<Client, "users">,
+  ownerUserID: string,
+): Promise<void> => {
+  await client.users.send(ownerUserID, {
+    content: "Guildscribe is online.",
+    allowedMentions: { parse: [] },
+  });
+};
+
 const acquireLock = async (
   paths: GuildscribePaths,
   startedAt: Date,
@@ -227,6 +237,19 @@ export const runDaemon = async (
     });
     await recorder.initialize();
     await updateRuntimeState("ready", true);
+    if (config.ownerUserID) {
+      try {
+        await sendOwnerOnlineNotification(client, config.ownerUserID);
+        diagnostic("info", "owner.onlineNotificationSent", {
+          ownerUserID: config.ownerUserID,
+        });
+      } catch (error) {
+        diagnostic("warn", "owner.onlineNotificationFailed", {
+          error: sanitizeError(error, [config.discordToken]),
+          ownerUserID: config.ownerUserID,
+        });
+      }
+    }
     let polling = false;
     transcriptionPoll = setInterval(() => {
       if (polling || shuttingDown) return;

@@ -202,6 +202,7 @@ wrapper failures and unhandled output before structured logging is available.
 
 ```text
 GUILDSCRIBE_DISCORD_TOKEN
+GUILDSCRIBE_OWNER_USER_ID
 GUILDSCRIBE_VOICE_CHANNEL_IDS
 GUILDSCRIBE_MESSAGE_CHANNEL_IDS
 GUILDSCRIBE_EMPTY_GRACE_MS
@@ -219,6 +220,11 @@ GUILDSCRIBE_HOOK_TRANSCRIPTION_FAILED
 `GUILDSCRIBE_VOICE_CHANNEL_IDS` contains a JSON array of one or more unique
 Discord channel IDs. The legacy singular `GUILDSCRIBE_VOICE_CHANNEL_ID` remains
 a read-only compatibility fallback when the plural key is absent.
+
+`GUILDSCRIBE_OWNER_USER_ID` is optional. When configured, Guildscribe sends that
+Discord user a direct message after the daemon establishes its initial gateway
+connection and becomes ready. Notification failure is logged but does not stop
+recording. Reconnects within the same daemon process do not send duplicates.
 
 `GUILDSCRIBE_TRANSCRIPTION_HOOK` is an optional absolute executable path. When
 it is absent, transcription is disabled. It is separate from the two
@@ -918,6 +924,7 @@ If export fails, Guildscribe removes only the newly created partial destination.
 ```json
 {
   "discordToken": "...",
+  "ownerUserID": "157904074535206912",
   "voiceChannelIDs": ["...", "..."],
   "emptyGraceMs": 30000,
   "transcriptionHook": "/absolute/path/to/transcribe",
@@ -929,10 +936,12 @@ If export fails, Guildscribe removes only the newly created partial destination.
 }
 ```
 
-The token and at least one unique channel ID are required. Initialization validates everything,
-creates the runtime home and artifact directories, and creates `.env`
-exclusively. If `.env` already exists, initialization fails without changing
-it. `--dry-run` creates nothing. Initialization does not contact Discord.
+The token and at least one unique channel ID are required. The owner user ID is
+optional and enables the one-time online direct message. Initialization
+validates everything, creates the runtime home and artifact directories, and
+creates `.env` exclusively. If `.env` already exists, initialization fails
+without changing it. `--dry-run` creates nothing. Initialization does not
+contact Discord.
 
 Configuration updates use the same structured-request rule: new secrets may
 only arrive through a JSON file or stdin, never a command-line value. Unknown

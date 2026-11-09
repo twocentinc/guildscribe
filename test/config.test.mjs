@@ -26,6 +26,7 @@ test("initialization writes owner-only configuration and refuses overwrite", asy
   const paths = getPaths(home);
   const request = {
     discordToken: "test-token-value",
+    ownerUserID: "157904074535206912",
     voiceChannelIDs: ["123456789012345678", "223456789012345678"],
     emptyGraceMs: 42_000,
     transcriptionHook: "/usr/bin/true",
@@ -43,6 +44,7 @@ test("initialization writes owner-only configuration and refuses overwrite", asy
     assert.ok((await stat(paths.logs)).isDirectory());
     const config = await loadConfig(paths);
     assert.equal(config.discordToken, request.discordToken);
+    assert.equal(config.ownerUserID, request.ownerUserID);
     assert.deepEqual(config.voiceChannelIDs, request.voiceChannelIDs);
     assert.equal(config.emptyGraceMs, 42_000);
     assert.equal(config.transcriptionHook, "/usr/bin/true");
@@ -52,6 +54,10 @@ test("initialization writes owner-only configuration and refuses overwrite", asy
     assert.match(
       await readFile(paths.env, "utf8"),
       /GUILDSCRIBE_DISCORD_TOKEN/,
+    );
+    assert.match(
+      await readFile(paths.env, "utf8"),
+      /GUILDSCRIBE_OWNER_USER_ID/,
     );
     assert.match(
       await readFile(paths.env, "utf8"),
@@ -174,6 +180,7 @@ test("configuration updates are atomic, redacted, and support clearing hooks", a
       paths,
       {
         discordToken: "original-secret",
+        ownerUserID: "157904074535206912",
         voiceChannelIDs: ["123456789012345678"],
         transcriptionHook: "/usr/bin/true",
         hooks: { channelJoined: "/usr/bin/true" },
@@ -185,6 +192,7 @@ test("configuration updates are atomic, redacted, and support clearing hooks", a
       paths,
       {
         voiceChannelIDs: ["223456789012345678", "123456789012345678"],
+        ownerUserID: null,
         transcriptionHook: null,
         hooks: { channelJoined: null, channelLeft: "/usr/bin/false" },
       },
@@ -192,6 +200,7 @@ test("configuration updates are atomic, redacted, and support clearing hooks", a
     );
     assert.equal(dryRun.changed, false);
     assert.equal(dryRun.configuration.discordToken, "[redacted]");
+    assert.equal(dryRun.configuration.ownerUserID, null);
     assert.equal(dryRun.configuration.transcriptionHook, null);
     assert.deepEqual(dryRun.configuration.voiceChannelIDs, [
       "223456789012345678",
@@ -203,6 +212,7 @@ test("configuration updates are atomic, redacted, and support clearing hooks", a
       paths,
       {
         discordToken: "replacement-secret",
+        ownerUserID: "257904074535206912",
         voiceChannelIDs: ["223456789012345678", "123456789012345678"],
         transcriptionHook: null,
         hooks: { channelJoined: null, channelLeft: "/usr/bin/false" },
@@ -214,6 +224,7 @@ test("configuration updates are atomic, redacted, and support clearing hooks", a
     assert.doesNotMatch(JSON.stringify(applied), /replacement-secret/);
     const config = await loadConfig(paths);
     assert.equal(config.discordToken, "replacement-secret");
+    assert.equal(config.ownerUserID, "257904074535206912");
     assert.equal(config.transcriptionHook, undefined);
     assert.equal(config.hooks.channelJoined, undefined);
     assert.equal(config.hooks.channelLeft, "/usr/bin/false");

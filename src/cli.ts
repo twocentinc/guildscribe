@@ -294,6 +294,8 @@ export const runCLI = async (inputArgv = process.argv): Promise<void> => {
             ...result,
             dryRun: Boolean(options.dryRun),
             discordToken: "[redacted]",
+            ownerUserID: request.ownerUserID ?? null,
+            messageChannelIDs: request.messageChannelIDs ?? [],
             voiceChannelIDs: request.voiceChannelIDs,
           },
         };

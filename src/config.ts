@@ -18,6 +18,7 @@ import { z } from "zod";
 
 import {
   configUpdateRequestSchema,
+  discordIDSchema,
   GuildscribeError,
   initRequestSchema,
   type ConfigUpdateRequest,
@@ -51,6 +52,7 @@ export interface HookConfiguration {
 
 export interface GuildscribeConfig {
   discordToken: string;
+  ownerUserID: string | undefined;
   voiceChannelIDs: string[];
   messageChannelIDs: string[];
   emptyGraceMs: number;
@@ -61,6 +63,7 @@ export interface GuildscribeConfig {
 
 const ENV_KEYS = {
   discordToken: "GUILDSCRIBE_DISCORD_TOKEN",
+  ownerUserID: "GUILDSCRIBE_OWNER_USER_ID",
   voiceChannelIDs: "GUILDSCRIBE_VOICE_CHANNEL_IDS",
   messageChannelIDs: "GUILDSCRIBE_MESSAGE_CHANNEL_IDS",
   legacyVoiceChannelID: "GUILDSCRIBE_VOICE_CHANNEL_ID",
@@ -171,6 +174,13 @@ const renderEnv = (request: InitRequest): string => {
     `${ENV_KEYS.emptyGraceMs}=${encodeValue(request.emptyGraceMs ?? 30_000)}`,
     `${ENV_KEYS.hookTimeoutMs}=${encodeValue(request.hookTimeoutMs ?? 30_000)}`,
   ];
+  if (request.ownerUserID) {
+    lines.splice(
+      1,
+      0,
+      `${ENV_KEYS.ownerUserID}=${encodeValue(request.ownerUserID)}`,
+    );
+  }
   const hooks = request.hooks;
   if (hooks?.channelJoined) {
     lines.push(`${ENV_KEYS.channelJoined}=${encodeValue(hooks.channelJoined)}`);
@@ -213,6 +223,7 @@ const renderEnv = (request: InitRequest): string => {
 
 export const redactedConfiguration = (config: GuildscribeConfig) => ({
   discordToken: "[redacted]",
+  ownerUserID: config.ownerUserID ?? null,
   voiceChannelIDs: config.voiceChannelIDs,
   messageChannelIDs: config.messageChannelIDs ?? [],
   emptyGraceMs: config.emptyGraceMs,
@@ -241,8 +252,13 @@ const mergedConfiguration = (
     update.transcriptionHook === null
       ? undefined
       : (update.transcriptionHook ?? config.transcriptionHook);
+  const ownerUserID =
+    update.ownerUserID === null
+      ? undefined
+      : (update.ownerUserID ?? config.ownerUserID);
   return {
     discordToken: update.discordToken ?? config.discordToken,
+    ...(ownerUserID ? { ownerUserID } : {}),
     voiceChannelIDs: update.voiceChannelIDs ?? config.voiceChannelIDs,
     messageChannelIDs:
       update.messageChannelIDs ?? config.messageChannelIDs ?? [],
@@ -268,6 +284,7 @@ export const updateConfiguration = async (
   }
   const preview = redactedConfiguration({
     discordToken: merged.discordToken,
+    ownerUserID: merged.ownerUserID,
     voiceChannelIDs: merged.voiceChannelIDs,
     messageChannelIDs: merged.messageChannelIDs ?? [],
     emptyGraceMs: merged.emptyGraceMs ?? 30_000,
@@ -462,6 +479,10 @@ export const loadConfig = async (
   }
   const values = parseEnvText(text);
   const token = values[ENV_KEYS.discordToken]?.trim();
+  const configuredOwnerUserID = values[ENV_KEYS.ownerUserID]?.trim();
+  const ownerUserIDResult = configuredOwnerUserID
+    ? discordIDSchema.safeParse(configuredOwnerUserID)
+    : null;
   const configuredChannels = values[ENV_KEYS.voiceChannelIDs]?.trim();
   const legacyChannel = values[ENV_KEYS.legacyVoiceChannelID]?.trim();
   let channelCandidates: unknown = legacyChannel ? [legacyChannel] : undefined;
@@ -477,10 +498,14 @@ export const loadConfig = async (
     }
   }
   const channelResult = voiceChannelIDsSchema.safeParse(channelCandidates);
-  if (!token || !channelResult.success) {
+  if (
+    !token ||
+    !channelResult.success ||
+    ownerUserIDResult?.success === false
+  ) {
     throw new GuildscribeError(
       "invalid_configuration",
-      "Discord token and at least one valid voice channel ID are required",
+      "Discord token, valid owner user ID when configured, and at least one valid voice channel ID are required",
     );
   }
   let messageChannelIDs: string[];
@@ -511,6 +536,7 @@ export const loadConfig = async (
   }
   return {
     discordToken: token,
+    ownerUserID: ownerUserIDResult?.data,
     voiceChannelIDs: channelResult.data,
     messageChannelIDs,
     emptyGraceMs: integerSetting(values, ENV_KEYS.emptyGraceMs, 30_000, 0),
