@@ -1,14 +1,9 @@
-import { constants } from "node:fs";
-import { access, lstat, open, rm } from "node:fs/promises";
+import { databaseCall, databasePathFor } from "./storage.js";
+import { discordIntents } from "./messages.js";
+import { lstat, open, rm } from "node:fs/promises";
 import path from "node:path";
 
-import {
-  ChannelType,
-  Client,
-  Events,
-  GatewayIntentBits,
-  PermissionFlagsBits,
-} from "discord.js";
+import { ChannelType, Client, Events, PermissionFlagsBits } from "discord.js";
 
 import {
   type GuildscribeConfig,
@@ -95,7 +90,7 @@ const checkDiscord = async (
   timeoutMs: number,
 ): Promise<void> => {
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+    intents: discordIntents(config.messageChannelIDs),
   });
   const ready = new Promise<void>((resolve, reject) => {
     if (client.isReady()) {
@@ -130,6 +125,31 @@ const checkDiscord = async (
         botTag: user?.tag ?? null,
       },
     );
+
+    for (const channelID of config.messageChannelIDs ?? []) {
+      const channel = await client.channels.fetch(channelID);
+      const supported =
+        channel &&
+        "guild" in channel &&
+        (channel.isTextBased() ||
+          channel.type === ChannelType.GuildForum ||
+          channel.type === ChannelType.GuildMedia);
+      const permissions =
+        supported && user ? channel.permissionsFor(user) : null;
+      pushCheck(
+        checks,
+        `discord.messages.${channelID}`,
+        Boolean(
+          supported &&
+          permissions?.has([
+            PermissionFlagsBits.ViewChannel,
+            PermissionFlagsBits.ReadMessageHistory,
+          ]),
+        ),
+        "Message capture requires an accessible guild channel, view/history permissions, and Message Content intent",
+        { channelID },
+      );
+    }
 
     for (const channelID of config.voiceChannelIDs) {
       try {
@@ -264,6 +284,38 @@ export const runDoctor = async (
     });
   }
 
+  try {
+    await lstat(databasePathFor(paths.home));
+    const [integrity, violations] = await databaseCall(
+      databasePathFor(paths.home),
+      [
+        { sql: "PRAGMA quick_check", mode: "all" },
+        { sql: "PRAGMA foreign_key_check", mode: "all" },
+      ],
+    );
+    const valid =
+      (integrity as Array<Record<string, unknown>>).every(
+        (row) => Object.values(row)[0] === "ok",
+      ) && (violations as unknown[]).length === 0;
+    pushCheck(
+      checks,
+      "database.integrity",
+      valid,
+      valid
+        ? "SQLite integrity and foreign keys are valid"
+        : "SQLite integrity check failed",
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      pushCheck(
+        checks,
+        "database.integrity",
+        true,
+        "SQLite will initialize on first daemon start",
+      );
+    else pushCheck(checks, "database.integrity", false, sanitizeError(error));
+  }
+
   let config: GuildscribeConfig | null = null;
   try {
     config = await loadConfig(paths);
@@ -306,13 +358,9 @@ export const runDoctor = async (
           { executable: config.transcriptionHook },
         );
       } catch (error) {
-        pushCheck(
-          checks,
-          "transcription.hook",
-          false,
-          sanitizeError(error),
-          { executable: config.transcriptionHook },
-        );
+        pushCheck(checks, "transcription.hook", false, sanitizeError(error), {
+          executable: config.transcriptionHook,
+        });
       }
     } else {
       pushCheck(

@@ -1,3 +1,5 @@
+import { databaseCall, databaseForRecording } from "../dist/storage.js";
+import { migrateLegacyStorage } from "../dist/transcription.js";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -130,6 +132,11 @@ test("recording verification applies the canonical transcript schema and text pr
       "hello\n",
     );
 
+    await writeFile(
+      fixture.location.manifestPath,
+      JSON.stringify(fixture.active.manifest),
+    );
+    await migrateLegacyStorage(fixture.paths);
     const valid = await verifyRecording(
       fixture.paths,
       fixture.active.manifest.recordingID,
@@ -139,9 +146,15 @@ test("recording verification applies the canonical transcript schema and text pr
       "pass",
     );
 
-    await writeFile(
-      path.join(fixture.location.directory, "transcript.txt"),
-      "different\n",
+    await databaseCall(
+      databaseForRecording(fixture.location),
+      [
+        {
+          sql: "UPDATE transcript_segments SET end_offset_ms = 999999 WHERE recording_id = ?",
+          params: [fixture.active.manifest.recordingID],
+        },
+      ],
+      true,
     );
     const inconsistent = await verifyRecording(
       fixture.paths,

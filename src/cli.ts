@@ -1,16 +1,24 @@
+import {
+  getMessage,
+  listHistory,
+  getTranscript,
+  exportTranscript,
+  retryTranscript,
+  databaseStatus,
+  verifyDatabase,
+  backupDatabase,
+  type HistoryOptions,
+} from "./history.js";
 import { Command, CommanderError, Option } from "commander";
 
-import {
-  getCommandDefinition,
-  helpResult,
-  leafUsage,
-} from "./commands.js";
+import { getCommandDefinition, helpResult, leafUsage } from "./commands.js";
 import {
   getPaths,
   initializeHome,
   loadConfig,
   readConfigUpdateRequest,
   readInitRequest,
+  readRequest,
   redactedConfiguration,
   resolveHome,
   updateConfiguration,
@@ -27,6 +35,7 @@ import {
   parseDurationMs,
   PROTOCOL_VERSION,
   SCHEMA_VERSION,
+  transcriptRetryRequestSchema,
   type ResultContext,
   validateResult,
   writeFailure,
@@ -178,11 +187,7 @@ const globalDiscoveryArguments = (args: string[]): string[] => {
 const normalizeDiscovery = (argv: string[]): string[] => {
   const args = argv.slice(2);
   if (args.includes("-V") || args.includes("--version")) {
-    return [
-      ...argv.slice(0, 2),
-      ...globalDiscoveryArguments(args),
-      "version",
-    ];
+    return [...argv.slice(0, 2), ...globalDiscoveryArguments(args), "version"];
   }
   const helpIndex = args.findIndex(
     (argument) => argument === "-h" || argument === "--help",
@@ -269,7 +274,10 @@ export const runCLI = async (inputArgv = process.argv): Promise<void> => {
   });
 
   leaf(program, "init")
-    .requiredOption("--request <file-or-dash>", "JSON request file or - for stdin")
+    .requiredOption(
+      "--request <file-or-dash>",
+      "JSON request file or - for stdin",
+    )
     .option("--dry-run", "validate without writing")
     .action(async (options: { request: string; dryRun?: boolean }, command) => {
       const globals = globalsFor(command);
@@ -332,20 +340,21 @@ export const runCLI = async (inputArgv = process.argv): Promise<void> => {
   });
 
   leaf(configuration, "config update")
-    .requiredOption("--request <file-or-dash>", "JSON request file or - for stdin")
+    .requiredOption(
+      "--request <file-or-dash>",
+      "JSON request file or - for stdin",
+    )
     .option("--dry-run", "validate and preview without writing")
-    .action(
-      async (options: { request: string; dryRun?: boolean }, command) => {
-        const globals = globalsFor(command);
-        await runFinite("config update", globals, async () => ({
-          result: await updateConfiguration(
-            getPaths(resolveHome(globals.home)),
-            await readConfigUpdateRequest(options.request),
-            Boolean(options.dryRun),
-          ),
-        }));
-      },
-    );
+    .action(async (options: { request: string; dryRun?: boolean }, command) => {
+      const globals = globalsFor(command);
+      await runFinite("config update", globals, async () => ({
+        result: await updateConfiguration(
+          getPaths(resolveHome(globals.home)),
+          await readConfigUpdateRequest(options.request),
+          Boolean(options.dryRun),
+        ),
+      }));
+    });
 
   const recordings = program
     .command("recordings")
@@ -409,6 +418,176 @@ export const runCLI = async (inputArgv = process.argv): Promise<void> => {
               wav: Boolean(options.wav),
               timeoutMs: parseDurationMs(globals.timeout ?? "30s"),
             },
+          ),
+        }));
+      },
+    );
+
+  const group = (name: string, description: string) =>
+    program
+      .command(name)
+      .description(description)
+      .action(async (_options, command) => {
+        await runFinite("help", globalsFor(command), async () => ({
+          result: helpResult([name]),
+        }));
+      });
+  const historyOptions = (command: Command) =>
+    command
+      .option("--channel <ID>", "channel ID")
+      .option("--after <timestamp>", "inclusive ISO timestamp")
+      .option("--before <timestamp>", "exclusive ISO timestamp")
+      .option("--limit <count>", "page size from 1 to 200", "50")
+      .option("--cursor <cursor>", "next page cursor");
+  const messages = group(
+    "messages",
+    "browse and search local Discord messages",
+  );
+  historyOptions(leaf(messages, "messages list"))
+    .option("--author <ID>", "author ID")
+    .option(
+      "--include-threads",
+      "include child threads of the selected channel",
+    )
+    .action(async (options: HistoryOptions, command) => {
+      const globals = globalsFor(command);
+      await runFinite("messages list", globals, async () => ({
+        result: await listHistory(
+          getPaths(resolveHome(globals.home)),
+          "messages",
+          options,
+        ),
+      }));
+    });
+  leaf(messages, "messages get").action(
+    async (id: string, _options, command) => {
+      const globals = globalsFor(command);
+      await runFinite("messages get", globals, async () => ({
+        result: await getMessage(getPaths(resolveHome(globals.home)), id),
+      }));
+    },
+  );
+  historyOptions(leaf(messages, "messages search"))
+    .option("--author <ID>", "author ID")
+    .option(
+      "--include-threads",
+      "include child threads of the selected channel",
+    )
+    .action(async (query: string, options: HistoryOptions, command) => {
+      const globals = globalsFor(command);
+      await runFinite("messages search", globals, async () => ({
+        result: await listHistory(
+          getPaths(resolveHome(globals.home)),
+          "messages",
+          options,
+          query,
+        ),
+      }));
+    });
+  const transcript = group(
+    "transcript",
+    "read, search, export, or retry transcription",
+  );
+  leaf(transcript, "transcript get")
+    .option("--include-segments", "include a page of transcript segments")
+    .option("--limit <count>", "segment page size from 1 to 200", "50")
+    .option("--cursor <cursor>", "next segment page")
+    .action(async (id: string, options: HistoryOptions, command) => {
+      const globals = globalsFor(command);
+      await runFinite("transcript get", globals, async () => ({
+        result: await getTranscript(
+          getPaths(resolveHome(globals.home)),
+          id,
+          options,
+        ),
+      }));
+    });
+  historyOptions(leaf(transcript, "transcript search"))
+    .option("--speaker <ID>", "speaker Discord user ID")
+    .action(async (query: string, options: HistoryOptions, command) => {
+      const globals = globalsFor(command);
+      await runFinite("transcript search", globals, async () => ({
+        result: await listHistory(
+          getPaths(resolveHome(globals.home)),
+          "transcript",
+          options,
+          query,
+        ),
+      }));
+    });
+  leaf(transcript, "transcript export")
+    .requiredOption("--destination <absolute-path>", "new export file")
+    .addOption(
+      new Option("--format <format>", "export format")
+        .choices(["txt", "json", "srt", "vtt"])
+        .default("txt"),
+    )
+    .option("--dry-run", "preview without writing")
+    .action(
+      async (
+        id: string,
+        options: { destination: string; format: string; dryRun?: boolean },
+        command,
+      ) => {
+        const globals = globalsFor(command);
+        await runFinite("transcript export", globals, async () => ({
+          result: await exportTranscript(
+            getPaths(resolveHome(globals.home)),
+            id,
+            options.destination,
+            options.format,
+            Boolean(options.dryRun),
+          ),
+        }));
+      },
+    );
+  leaf(transcript, "transcript retry")
+    .requiredOption("--request <file-or-dash>", "JSON request file or stdin")
+    .option("--dry-run", "preview without queuing")
+    .action(async (options: { request: string; dryRun?: boolean }, command) => {
+      const globals = globalsFor(command);
+      await runFinite("transcript retry", globals, async () => {
+        const request = await readRequest(
+          options.request,
+          transcriptRetryRequestSchema,
+        );
+        return {
+          result: await retryTranscript(
+            getPaths(resolveHome(globals.home)),
+            request.recordingID,
+            Boolean(options.dryRun),
+          ),
+        };
+      });
+    });
+  const database = group(
+    "database",
+    "inspect and back up local SQLite storage",
+  );
+  leaf(database, "database status").action(async (_options, command) => {
+    const globals = globalsFor(command);
+    await runFinite("database status", globals, async () => ({
+      result: await databaseStatus(getPaths(resolveHome(globals.home))),
+    }));
+  });
+  leaf(database, "database verify").action(async (_options, command) => {
+    const globals = globalsFor(command);
+    await runFinite("database verify", globals, async () => {
+      const result = await verifyDatabase(getPaths(resolveHome(globals.home)));
+      return { result, ok: result.passed };
+    });
+  });
+  leaf(database, "database backup")
+    .requiredOption("--destination <absolute-path>", "new SQLite backup file")
+    .option("--dry-run", "preview without writing")
+    .action(
+      async (options: { destination: string; dryRun?: boolean }, command) => {
+        const globals = globalsFor(command);
+        await runFinite("database backup", globals, async () => ({
+          result: await backupDatabase(
+            getPaths(resolveHome(globals.home)),
+            options.destination,
+            Boolean(options.dryRun),
           ),
         }));
       },

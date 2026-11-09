@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "objects": [
+    {
+      "type": "index",
+      "name": "messages_channel_created_idx",
+      "tableName": "messages",
+      "sql": "CREATE INDEX messages_channel_created_idx ON messages(channel_id, created_at, message_id)"
+    },
+    {
+      "type": "index",
+      "name": "recordings_channel_started_idx",
+      "tableName": "recordings",
+      "sql": "CREATE INDEX recordings_channel_started_idx ON recordings(channel_id, started_at)"
+    },
+    {
+      "type": "table",
+      "name": "messages",
+      "tableName": "messages",
+      "sql": "CREATE TABLE messages ( message_row_id INTEGER PRIMARY KEY, message_id TEXT NOT NULL UNIQUE, guild_id TEXT NOT NULL, channel_id TEXT NOT NULL, parent_channel_id TEXT, channel_name TEXT, author_id TEXT NOT NULL, author_username TEXT NOT NULL, author_display_name TEXT, author_is_bot INTEGER NOT NULL, webhook_id TEXT, message_type INTEGER NOT NULL, content TEXT NOT NULL, reply_to_message_id TEXT, created_at INTEGER NOT NULL, edited_at INTEGER, observed_at INTEGER NOT NULL, attachments_json TEXT NOT NULL DEFAULT '[]', embeds_json TEXT NOT NULL DEFAULT '[]')"
+    },
+    {
+      "type": "table",
+      "name": "messages_fts",
+      "tableName": "messages_fts",
+      "sql": "CREATE VIRTUAL TABLE messages_fts USING fts5(content, content='messages', content_rowid='message_row_id', tokenize='unicode61')"
+    },
+    {
+      "type": "table",
+      "name": "recordings",
+      "tableName": "recordings",
+      "sql": "CREATE TABLE recordings ( recording_id TEXT PRIMARY KEY NOT NULL, guild_id TEXT NOT NULL, guild_name TEXT, channel_id TEXT NOT NULL, channel_name TEXT, status TEXT NOT NULL, started_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, ended_at INTEGER, duration_ms INTEGER, recovered_after_restart INTEGER NOT NULL DEFAULT 0, error TEXT, directory_path TEXT NOT NULL UNIQUE)"
+    },
+    {
+      "type": "table",
+      "name": "transcript_segments",
+      "tableName": "transcript_segments",
+      "sql": "CREATE TABLE transcript_segments ( segment_id INTEGER PRIMARY KEY, recording_id TEXT NOT NULL REFERENCES transcripts(recording_id), segment_index INTEGER NOT NULL, start_offset_ms INTEGER NOT NULL, end_offset_ms INTEGER NOT NULL, text TEXT NOT NULL, source_interval_id TEXT, speaker_user_id TEXT, speaker_username TEXT, speaker_display_name TEXT, UNIQUE(recording_id, segment_index))"
+    },
+    {
+      "type": "table",
+      "name": "transcript_segments_fts",
+      "tableName": "transcript_segments_fts",
+      "sql": "CREATE VIRTUAL TABLE transcript_segments_fts USING fts5(text, content='transcript_segments', content_rowid='segment_id', tokenize='unicode61')"
+    },
+    {
+      "type": "table",
+      "name": "transcripts",
+      "tableName": "transcripts",
+      "sql": "CREATE TABLE transcripts ( recording_id TEXT PRIMARY KEY NOT NULL REFERENCES recordings(recording_id), status TEXT NOT NULL, attempts INTEGER NOT NULL, queued_at INTEGER NOT NULL, started_at INTEGER, finished_at INTEGER, error TEXT, language TEXT)"
+    },
+    {
+      "type": "trigger",
+      "name": "messages_fts_delete",
+      "tableName": "messages",
+      "sql": "CREATE TRIGGER messages_fts_delete AFTER DELETE ON messages BEGIN INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', old.message_row_id, old.content); END"
+    },
+    {
+      "type": "trigger",
+      "name": "messages_fts_insert",
+      "tableName": "messages",
+      "sql": "CREATE TRIGGER messages_fts_insert AFTER INSERT ON messages BEGIN INSERT INTO messages_fts(rowid, content) VALUES(new.message_row_id, new.content); END"
+    },
+    {
+      "type": "trigger",
+      "name": "messages_fts_update",
+      "tableName": "messages",
+      "sql": "CREATE TRIGGER messages_fts_update AFTER UPDATE OF content ON messages BEGIN INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', old.message_row_id, old.content); INSERT INTO messages_fts(rowid, content) VALUES(new.message_row_id, new.content); END"
+    },
+    {
+      "type": "trigger",
+      "name": "transcript_segments_fts_delete",
+      "tableName": "transcript_segments",
+      "sql": "CREATE TRIGGER transcript_segments_fts_delete AFTER DELETE ON transcript_segments BEGIN INSERT INTO transcript_segments_fts(transcript_segments_fts, rowid, text) VALUES('delete', old.segment_id, old.text); END"
+    },
+    {
+      "type": "trigger",
+      "name": "transcript_segments_fts_insert",
+      "tableName": "transcript_segments",
+      "sql": "CREATE TRIGGER transcript_segments_fts_insert AFTER INSERT ON transcript_segments BEGIN INSERT INTO transcript_segments_fts(rowid, text) VALUES(new.segment_id, new.text); END"
+    },
+    {
+      "type": "trigger",
+      "name": "transcript_segments_fts_update",
+      "tableName": "transcript_segments",
+      "sql": "CREATE TRIGGER transcript_segments_fts_update AFTER UPDATE OF text ON transcript_segments BEGIN INSERT INTO transcript_segments_fts(transcript_segments_fts, rowid, text) VALUES('delete', old.segment_id, old.text); INSERT INTO transcript_segments_fts(rowid, text) VALUES(new.segment_id, new.text); END"
+    }
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "contractVersion": 1,
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "recordingID": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "running",
+          "complete",
+          "failed"
+        ]
+      },
+      "attempts": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      },
+      "queuedAt": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      },
+      "startedAt": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "finishedAt": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "error": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "language": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "segmentCount": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      },
+      "version": {
+        "type": "number",
+        "const": 1
+      },
+      "segments": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "segmentID": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "recordingID": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "segmentIndex": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "startOffsetMs": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "endOffsetMs": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "text": {
+              "type": "string"
+            },
+            "sourceIntervalID": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "speakerUserID": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "speakerUsername": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "speakerDisplayName": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "segmentID",
+            "recordingID",
+            "segmentIndex",
+            "startOffsetMs",
+            "endOffsetMs",
+            "text",
+            "sourceIntervalID",
+            "speakerUserID",
+            "speakerUsername",
+            "speakerDisplayName"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "recordingID",
+      "status",
+      "attempts",
+      "queuedAt",
+      "startedAt",
+      "finishedAt",
+      "error",
+      "language",
+      "segmentCount",
+      "version",
+      "segments"
+    ],
+    "additionalProperties": false
+  }
+}

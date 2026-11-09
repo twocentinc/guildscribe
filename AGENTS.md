@@ -32,9 +32,17 @@ Saratonin so it can be published and installed on its own.
 ## Persistence
 
 - Use `~/.guildscribe/.env` by default for configuration.
-- Store recording state and artifacts as ordinary files below
-  `~/.guildscribe`; do not add a database without a new concrete requirement.
-- Write JSON manifests and interval sidecars atomically.
+- SQLite at `<home>/guildscribe.sqlite` owns messages, recording metadata,
+  transcription state, and transcript segments. `src/storage.ts` owns typed
+  storage operations; `src/databaseWorker.ts` owns migrations and SQLite work.
+  Keep synchronous database operations off the audio event loop.
+- `src/history.ts` owns local history queries, exports, and database CLI
+  operations. Keep verification read-only, output destinations exclusive, and
+  retry requests as durable queue updates consumed by the existing daemon.
+- Keep audio, interval sidecars, and participant presence/session documents as
+  files. Do not recreate `recording.json`, `transcript.json`, or `transcript.txt`
+  as runtime metadata. Migration recovery bundles are durable backups.
+- Write participant documents and interval sidecars atomically.
 - Validate every persistent recording document with its strict Zod schema on
   both read and write. Require recording identity to match its directory.
 - Recording schema version 1 defines interval PCM as signed 16-bit little-endian,
@@ -126,6 +134,20 @@ section so it can be copied without carrying Guildscribe behavior with it.
 - Enforce credential-file ownership, regular-file type, non-symlink status, and
   owner-only permissions when loading secrets, not only in a diagnostic command.
 
+## Frozen contracts
+
+- Generate contract snapshots from runtime validators, the command registry, and
+  a temporary database created by the real migration worker. The catalog in
+  `scripts/contractCatalog.mjs` references those owners; it must not copy schemas.
+- Keep accepted snapshots under `test/snapshots/versions/` immutable. Any change
+  to a frozen contract requires advancing its corresponding CLI schema,
+  document contract, or SQLite migration version and reviewing the generated
+  diff. Never edit or delete an old archive to bypass a failing check.
+- `npm run contracts:update` rejects same-version drift before writing snapshots.
+  Current snapshots are generated mirrors, not independent schema definitions.
+- Keep representative document fixtures and runtime validation tests: JSON Schema
+  cannot express every Zod refinement, ordering rule, or filesystem identity check.
+
 ## Event hooks
 
 - Hook configuration lives in `.env` as absolute executable paths.
@@ -157,9 +179,10 @@ section so it can be copied without carrying Guildscribe behavior with it.
 - Invoke the transcription executable with the absolute recording directory as
   its sole argument and working directory. It receives no structured stdin.
   Require it to atomically write `.transcript-result.json.pending` and exit
-  zero; Guildscribe validates and embeds that result into canonical
-  `transcript.json`. Never let an external hook own canonical transcript state
-  or `transcript.txt`.
+  zero; Guildscribe validates and commits transcript state and segment rows in
+  one transaction. Supply `GUILDSCRIBE_DATABASE` and
+  `GUILDSCRIBE_RECORDING_ID` for read-only metadata access. Never let an external
+  hook write the database directly.
 - Retain interval PCM permanently with the completed recording, regardless of
   whether transcription is enabled or succeeds. Rendering and processing must
   never delete captured PCM.
@@ -171,7 +194,7 @@ section so it can be copied without carrying Guildscribe behavior with it.
 - Guildscribe must not implement a second desktop-presence sampler or local
   model scheduler. Nightcrew fails closed on unknown or unhealthy presence
   before starting Granite work.
-- Background failures must remain inspectable through manifests and must not
+- Background failures must remain inspectable through SQLite state and must not
   delete completed recording artifacts.
 
 ## Distribution

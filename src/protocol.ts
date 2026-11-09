@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1;
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 5;
 
 export const EXIT_CODES = {
   success: 0,
@@ -72,6 +72,12 @@ const exitCodeFor = (code: string): number => {
 const snowflakeSchema = z
   .string()
   .regex(/^\d{15,22}$/, "Expected a Discord ID");
+export const messageChannelIDsSchema = z
+  .array(snowflakeSchema)
+  .refine(
+    (ids) => new Set(ids).size === ids.length,
+    "Message channel IDs must be unique",
+  );
 export const voiceChannelIDsSchema = z
   .array(snowflakeSchema)
   .min(1, "At least one voice channel ID is required")
@@ -89,6 +95,7 @@ export const initRequestSchema = z
   .object({
     discordToken: z.string().trim().min(1),
     voiceChannelIDs: voiceChannelIDsSchema,
+    messageChannelIDs: messageChannelIDsSchema.optional(),
     emptyGraceMs: z.number().int().min(0).max(3_600_000).optional(),
     hookTimeoutMs: z.number().int().min(1).max(3_600_000).optional(),
     transcriptionHook: executablePathSchema.optional(),
@@ -113,6 +120,7 @@ export const configUpdateRequestSchema = z
   .object({
     discordToken: z.string().trim().min(1).optional(),
     voiceChannelIDs: voiceChannelIDsSchema.optional(),
+    messageChannelIDs: messageChannelIDsSchema.optional(),
     emptyGraceMs: z.number().int().min(0).max(3_600_000).optional(),
     hookTimeoutMs: z.number().int().min(1).max(3_600_000).optional(),
     transcriptionHook: nullableExecutablePathSchema.optional(),
@@ -169,6 +177,7 @@ const doctorResultSchema = z.object({
 });
 const configurationSchema = z.object({
   discordToken: z.literal("[redacted]"),
+  messageChannelIDs: z.array(snowflakeSchema),
   voiceChannelIDs: z.array(snowflakeSchema),
   emptyGraceMs: z.number().int(),
   hookTimeoutMs: z.number().int(),
@@ -197,8 +206,7 @@ const recordingSummarySchema = z.object({
   audioFile: z.string().nullable(),
   audioFileBytes: z.number().int(),
   transcriptionStatus: z.string().nullable(),
-  transcriptJSONBytes: z.number().int(),
-  transcriptTextBytes: z.number().int(),
+  transcriptSegmentCount: z.number().int().nonnegative(),
   participantCount: z.number().int(),
   pcmFileCount: z.number().int(),
   pcmFileBytes: z.number().int(),
@@ -306,9 +314,7 @@ const startupWrappedStatusResultSchema = z.object({
   status: startupStatusSchema,
 });
 const startupLogsResultSchema = z.object({
-  files: z.array(
-    z.object({ path: z.string(), lines: z.array(z.string()) }),
-  ),
+  files: z.array(z.object({ path: z.string(), lines: z.array(z.string()) })),
 });
 const initResultSchema = z.object({
   created: z.boolean(),
@@ -316,6 +322,7 @@ const initResultSchema = z.object({
   configurationPath: z.string(),
   dryRun: z.boolean(),
   discordToken: z.literal("[redacted]"),
+  messageChannelIDs: z.array(snowflakeSchema),
   voiceChannelIDs: z.array(snowflakeSchema),
 });
 const envelopeSuccessSchema = z.object({
@@ -345,7 +352,110 @@ const versionResultSchema = z.object({
   version: z.string(),
 });
 
+export const messageResultSchema = z.object({
+  messageID: snowflakeSchema,
+  guildID: snowflakeSchema,
+  channelID: snowflakeSchema,
+  parentChannelID: snowflakeSchema.nullable(),
+  channelName: z.string().nullable(),
+  authorID: snowflakeSchema,
+  authorUsername: z.string(),
+  authorDisplayName: z.string().nullable(),
+  authorIsBot: z.boolean(),
+  webhookID: snowflakeSchema.nullable(),
+  messageType: z.number().int(),
+  content: z.string(),
+  replyToMessageID: snowflakeSchema.nullable(),
+  createdAt: z.number().int(),
+  editedAt: z.number().int().nullable(),
+  observedAt: z.number().int(),
+  attachments: z.array(z.record(z.string(), z.unknown())),
+  embeds: z.array(z.record(z.string(), z.unknown())),
+});
+export const segmentResultSchema = z.object({
+  segmentID: z.number().int(),
+  recordingID: z.uuid(),
+  segmentIndex: z.number().int(),
+  startOffsetMs: z.number().int(),
+  endOffsetMs: z.number().int(),
+  text: z.string(),
+  sourceIntervalID: z.string().nullable(),
+  speakerUserID: z.string().nullable(),
+  speakerUsername: z.string().nullable(),
+  speakerDisplayName: z.string().nullable(),
+});
+const page = <T extends z.ZodType>(item: T) =>
+  z.object({ items: z.array(item), nextCursor: z.string().nullable() });
+export const transcriptMetadataSchema = z.object({
+  recordingID: z.uuid(),
+  status: z.enum(["pending", "running", "complete", "failed"]),
+  attempts: z.number().int(),
+  queuedAt: z.number().int(),
+  startedAt: z.number().int().nullable(),
+  finishedAt: z.number().int().nullable(),
+  error: z.string().nullable(),
+  language: z.string().nullable(),
+  segmentCount: z.number().int(),
+});
+export const transcriptRetryRequestSchema = z
+  .object({ recordingID: z.uuid() })
+  .strict();
+const outputFileResultSchema = z.object({
+  changed: z.boolean(),
+  dryRun: z.boolean(),
+  destination: z.string(),
+  bytes: z.number().int().nonnegative().nullable(),
+  sha256: z.string().nullable(),
+});
+const databaseStatusResultSchema = z.object({
+  databasePath: z.string(),
+  schemaVersion: z.number().int(),
+  databaseBytes: z.number().int(),
+  walBytes: z.number().int(),
+  counts: z.object({
+    messages: z.number().int(),
+    recordings: z.number().int(),
+    transcripts: z.number().int(),
+    transcriptSegments: z.number().int(),
+  }),
+});
+const databaseVerifyResultSchema = z.object({
+  passed: z.boolean(),
+  checks: z.array(
+    z.object({ name: z.string(), passed: z.boolean(), detail: z.string() }),
+  ),
+});
+
 export const schemas = {
+  "messages.get.result": messageResultSchema,
+  "messages.page.result": page(messageResultSchema),
+  "transcript.get.result": transcriptMetadataSchema.extend({
+    segments: z.array(segmentResultSchema).optional(),
+    nextCursor: z.string().nullable(),
+  }),
+  "transcript.search.result": page(
+    segmentResultSchema.extend({
+      channelID: snowflakeSchema,
+      channelName: z.string().nullable(),
+      recordingStartedAt: z.number().int(),
+    }),
+  ),
+  "transcript.export.result": outputFileResultSchema.extend({
+    recordingID: z.uuid(),
+    format: z.enum(["txt", "json", "srt", "vtt"]),
+  }),
+  "transcript.retry.request": transcriptRetryRequestSchema,
+  "transcript.retry.result": z.object({
+    recordingID: z.uuid(),
+    changed: z.boolean(),
+    dryRun: z.boolean(),
+    status: z.enum(["pending", "running", "complete", "failed"]),
+    attempts: z.number().int(),
+  }),
+  "database.status.result": databaseStatusResultSchema,
+  "database.verify.result": databaseVerifyResultSchema,
+  "database.backup.result": outputFileResultSchema,
+
   "config.update.request": configUpdateRequestSchema,
   "config.update.result": configurationUpdateResultSchema,
   "configuration.result": configurationSchema,
@@ -409,7 +519,9 @@ export const validateResult = (name: SchemaName, result: unknown): unknown => {
 };
 
 export const packageVersion = (): string => {
-  const packagePath = fileURLToPath(new URL("../package.json", import.meta.url));
+  const packagePath = fileURLToPath(
+    new URL("../package.json", import.meta.url),
+  );
   const parsed = JSON.parse(readFileSync(packagePath, "utf8")) as {
     version?: unknown;
   };
@@ -569,9 +681,7 @@ const shouldWriteDiagnostic = (
   if (level === "error") return true;
   if (diagnosticVerbosity === "quiet") return false;
   if (level === "debug") {
-    return (
-      diagnosticVerbosity === "verbose" || diagnosticVerbosity === "debug"
-    );
+    return diagnosticVerbosity === "verbose" || diagnosticVerbosity === "debug";
   }
   return true;
 };

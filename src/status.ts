@@ -14,7 +14,7 @@ import {
   type RecordingManifest,
 } from "./recording.js";
 
-const daemonLockSchema = z
+export const daemonLockSchema = z
   .object({
     version: z.literal(1),
     pid: z.number().int().positive(),
@@ -27,7 +27,7 @@ export type DaemonLock = z.infer<typeof daemonLockSchema>;
 export const DAEMON_HEARTBEAT_INTERVAL_MS = 10_000;
 export const DAEMON_HEARTBEAT_STALE_MS = 30_000;
 
-const daemonRuntimeStateSchema = z
+export const daemonRuntimeStateSchema = z
   .object({
     version: z.literal(1),
     pid: z.number().int().positive(),

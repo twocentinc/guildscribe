@@ -23,6 +23,7 @@ import {
   type ConfigUpdateRequest,
   type InitRequest,
   voiceChannelIDsSchema,
+  messageChannelIDsSchema,
 } from "./protocol.js";
 
 export interface GuildscribePaths {
@@ -51,6 +52,7 @@ export interface HookConfiguration {
 export interface GuildscribeConfig {
   discordToken: string;
   voiceChannelIDs: string[];
+  messageChannelIDs: string[];
   emptyGraceMs: number;
   hookTimeoutMs: number;
   transcriptionHook: string | undefined;
@@ -60,6 +62,7 @@ export interface GuildscribeConfig {
 const ENV_KEYS = {
   discordToken: "GUILDSCRIBE_DISCORD_TOKEN",
   voiceChannelIDs: "GUILDSCRIBE_VOICE_CHANNEL_IDS",
+  messageChannelIDs: "GUILDSCRIBE_MESSAGE_CHANNEL_IDS",
   legacyVoiceChannelID: "GUILDSCRIBE_VOICE_CHANNEL_ID",
   emptyGraceMs: "GUILDSCRIBE_EMPTY_GRACE_MS",
   hookTimeoutMs: "GUILDSCRIBE_HOOK_TIMEOUT_MS",
@@ -106,7 +109,7 @@ const readStdin = async (): Promise<string> => {
   return Buffer.concat(chunks).toString("utf8");
 };
 
-const readRequest = async <T>(
+export const readRequest = async <T>(
   source: string,
   schema: z.ZodType<T>,
 ): Promise<T> => {
@@ -164,6 +167,7 @@ const renderEnv = (request: InitRequest): string => {
   const lines = [
     `${ENV_KEYS.discordToken}=${encodeValue(request.discordToken)}`,
     `${ENV_KEYS.voiceChannelIDs}=${encodeValue(JSON.stringify(request.voiceChannelIDs))}`,
+    `${ENV_KEYS.messageChannelIDs}=${encodeValue(JSON.stringify(request.messageChannelIDs ?? []))}`,
     `${ENV_KEYS.emptyGraceMs}=${encodeValue(request.emptyGraceMs ?? 30_000)}`,
     `${ENV_KEYS.hookTimeoutMs}=${encodeValue(request.hookTimeoutMs ?? 30_000)}`,
   ];
@@ -210,6 +214,7 @@ const renderEnv = (request: InitRequest): string => {
 export const redactedConfiguration = (config: GuildscribeConfig) => ({
   discordToken: "[redacted]",
   voiceChannelIDs: config.voiceChannelIDs,
+  messageChannelIDs: config.messageChannelIDs ?? [],
   emptyGraceMs: config.emptyGraceMs,
   hookTimeoutMs: config.hookTimeoutMs,
   transcriptionHook: config.transcriptionHook ?? null,
@@ -239,6 +244,8 @@ const mergedConfiguration = (
   return {
     discordToken: update.discordToken ?? config.discordToken,
     voiceChannelIDs: update.voiceChannelIDs ?? config.voiceChannelIDs,
+    messageChannelIDs:
+      update.messageChannelIDs ?? config.messageChannelIDs ?? [],
     emptyGraceMs: update.emptyGraceMs ?? config.emptyGraceMs,
     hookTimeoutMs: update.hookTimeoutMs ?? config.hookTimeoutMs,
     ...(transcriptionHook ? { transcriptionHook } : {}),
@@ -262,13 +269,19 @@ export const updateConfiguration = async (
   const preview = redactedConfiguration({
     discordToken: merged.discordToken,
     voiceChannelIDs: merged.voiceChannelIDs,
+    messageChannelIDs: merged.messageChannelIDs ?? [],
     emptyGraceMs: merged.emptyGraceMs ?? 30_000,
     hookTimeoutMs: merged.hookTimeoutMs ?? 30_000,
     transcriptionHook: merged.transcriptionHook,
     hooks: previewHooks,
   });
   if (dryRun) {
-    return { changed: false, dryRun: true, restartRequired: true, configuration: preview };
+    return {
+      changed: false,
+      dryRun: true,
+      restartRequired: true,
+      configuration: preview,
+    };
   }
   const temporaryPath = path.join(paths.home, `.env.${randomUUID()}.tmp`);
   try {
@@ -287,7 +300,12 @@ export const updateConfiguration = async (
       { cause: error, retrySafety: "unsafe" },
     );
   }
-  return { changed: true, dryRun: false, restartRequired: true, configuration: preview };
+  return {
+    changed: true,
+    dryRun: false,
+    restartRequired: true,
+    configuration: preview,
+  };
 };
 
 const exists = async (candidate: string): Promise<boolean> => {
@@ -465,6 +483,18 @@ export const loadConfig = async (
       "Discord token and at least one valid voice channel ID are required",
     );
   }
+  let messageChannelIDs: string[];
+  try {
+    messageChannelIDs = messageChannelIDsSchema.parse(
+      JSON.parse(values[ENV_KEYS.messageChannelIDs] || "[]"),
+    );
+  } catch (error) {
+    throw new GuildscribeError(
+      "invalid_configuration",
+      "Invalid GUILDSCRIBE_MESSAGE_CHANNEL_IDS",
+      { cause: error },
+    );
+  }
   const hooks: HookConfiguration = {};
   const hookEntries = [
     ["channelJoined", ENV_KEYS.channelJoined],
@@ -482,6 +512,7 @@ export const loadConfig = async (
   return {
     discordToken: token,
     voiceChannelIDs: channelResult.data,
+    messageChannelIDs,
     emptyGraceMs: integerSetting(values, ENV_KEYS.emptyGraceMs, 30_000, 0),
     hookTimeoutMs: integerSetting(values, ENV_KEYS.hookTimeoutMs, 30_000, 1),
     transcriptionHook: optionalHook(values, ENV_KEYS.transcriptionHook),

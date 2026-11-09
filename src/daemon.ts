@@ -1,6 +1,7 @@
+import { discordIntents, MessageLogger } from "./messages.js";
 import { mkdir, open, readFile, unlink } from "node:fs/promises";
 
-import { Client, Events, GatewayIntentBits } from "discord.js";
+import { Client, Events, Partials } from "discord.js";
 
 import type { GuildscribeConfig, GuildscribePaths } from "./config.js";
 import {
@@ -10,7 +11,7 @@ import {
   sanitizeError,
 } from "./protocol.js";
 import { GuildscribeRecorder, recoverRecordings } from "./recording.js";
-import { TranscriptionWorker } from "./transcription.js";
+import { migrateLegacyStorage, TranscriptionWorker } from "./transcription.js";
 import {
   DAEMON_HEARTBEAT_INTERVAL_MS,
   daemonLockText,
@@ -72,8 +73,15 @@ export const runDaemon = async (
   const daemonStartedAt = new Date();
   const releaseLock = await acquireLock(paths, daemonStartedAt);
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+    intents: discordIntents(config.messageChannelIDs),
+    partials: [Partials.Message],
   });
+  const messages = new MessageLogger(
+    paths.home,
+    config.messageChannelIDs ?? [],
+  );
+  client.on(Events.MessageCreate, (message) => messages.capture(message));
+  client.on(Events.MessageUpdate, (_old, message) => messages.capture(message));
   const transcription = new TranscriptionWorker(paths, config);
   const recorder = new GuildscribeRecorder({
     client,
@@ -82,6 +90,7 @@ export const runDaemon = async (
     onRecordingPublished: (location, manifest) =>
       transcription.enqueue(location, manifest).then(() => undefined),
   });
+  let transcriptionPoll: NodeJS.Timeout | undefined;
   let shuttingDown = false;
   let runtimeState: DaemonRuntimeState["state"] = "starting";
   let discordReady = false;
@@ -123,6 +132,7 @@ export const runDaemon = async (
     if (shuttingDown) return new Promise<never>(() => undefined);
     shuttingDown = true;
     clearInterval(heartbeat);
+    if (transcriptionPoll) clearInterval(transcriptionPoll);
     diagnostic("info", "daemon.stopping", { signal });
     await updateRuntimeState("stopping", false, lastError).catch(
       (error: unknown) => {
@@ -141,6 +151,7 @@ export const runDaemon = async (
         error: sanitizeError(error),
       });
     });
+    await messages.shutdown();
     client.destroy();
     await releaseLock().catch((error: unknown) => {
       diagnostic("error", "daemon.lockReleaseFailed", {
@@ -198,6 +209,7 @@ export const runDaemon = async (
 
   try {
     await persistRuntimeState();
+    await migrateLegacyStorage(paths);
     await transcription.recover();
     await recoverRecordings(paths, config, (location, manifest) =>
       transcription.enqueue(location, manifest).then(() => undefined),
@@ -215,14 +227,32 @@ export const runDaemon = async (
     });
     await recorder.initialize();
     await updateRuntimeState("ready", true);
+    let polling = false;
+    transcriptionPoll = setInterval(() => {
+      if (polling || shuttingDown) return;
+      polling = true;
+      void transcription
+        .pollPending()
+        .catch((error) =>
+          diagnostic("error", "transcription.pollFailed", {
+            error: sanitizeError(error),
+          }),
+        )
+        .finally(() => {
+          polling = false;
+        });
+    }, 2000);
+    transcriptionPoll.unref();
   } catch (error) {
     clearInterval(heartbeat);
+    if (transcriptionPoll) clearInterval(transcriptionPoll);
     await updateRuntimeState(
       "degraded",
       false,
       sanitizeError(error, [config.discordToken]),
     ).catch(() => undefined);
     await transcription.shutdown().catch(() => undefined);
+    await messages.shutdown();
     client.destroy();
     await releaseLock().catch(() => undefined);
     throw new GuildscribeError(

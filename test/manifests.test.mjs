@@ -1,3 +1,4 @@
+import { databaseCall, databaseForRecording } from "../dist/storage.js";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,6 +12,7 @@ import {
   loadIntervals,
   publishRecording,
   readManifest,
+  locationForDirectory,
   saveInterval,
   saveManifest,
 } from "../dist/recording.js";
@@ -70,9 +72,8 @@ test("recording manifests retain PCM intervals and publish validated audio", asy
       active.manifest,
     );
     assert.match(published.directory, /recordings\/2026\/11\//);
-    const finalManifest = JSON.parse(
-      await readFile(published.manifestPath, "utf8"),
-    );
+    const finalManifest = await readManifest(published);
+    await assert.rejects(stat(published.manifestPath), { code: "ENOENT" });
     assert.equal(finalManifest.status, "complete");
     assert.equal(finalManifest.schemaVersion, 1);
     assert.equal("pcmFormat" in finalManifest, false);
@@ -117,6 +118,16 @@ test("recording schemas read legacy manifests and reject unsafe identity", async
       intervalCount: 0,
       error: null,
     };
+    await databaseCall(
+      databaseForRecording(active.location),
+      [
+        {
+          sql: "DELETE FROM recordings WHERE recording_id = ?",
+          params: [active.manifest.recordingID],
+        },
+      ],
+      true,
+    );
     await writeFile(active.location.manifestPath, JSON.stringify(legacy));
     const normalized = await readManifest(active.location);
     assert.equal(normalized.schemaVersion, 1);
@@ -215,9 +226,7 @@ test("daemon recovery renders an interrupted capture", async () => {
       "11",
       active.manifest.recordingID,
     );
-    const recovered = JSON.parse(
-      await readFile(path.join(published, "recording.json"), "utf8"),
-    );
+    const recovered = await readManifest(locationForDirectory(published));
     assert.equal(recovered.status, "complete");
     assert.equal(recovered.recoveredAfterRestart, true);
     assert.ok((await stat(path.join(published, "audio.mp3"))).size > 0);

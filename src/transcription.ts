@@ -1,6 +1,16 @@
+import {
+  databaseCall,
+  databaseForRecording,
+  databasePathFor,
+  loadRecording,
+  loadTranscript,
+  recordingStatement,
+  transcriptStatements,
+  type SegmentSpeaker,
+} from "./storage.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { open, readFile, readdir, rename, rm, stat } from "node:fs/promises";
+import { readFile, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
@@ -10,6 +20,10 @@ import {
   loadIntervals,
   locationForDirectory,
   readManifest,
+  readParticipants,
+  discoverRecordings,
+  findRecording,
+  recordingManifestSchema,
   recordingIDSchema,
   writeJSON,
   type RecordingLocation,
@@ -268,7 +282,7 @@ const readLegacyState = async (
   }
 };
 
-export const readTranscriptionState = async (
+export const readLegacyTranscriptionState = async (
   location: RecordingLocation,
 ): Promise<TranscriptDocument | null> => {
   try {
@@ -314,6 +328,245 @@ export const readTranscriptionState = async (
   });
 };
 
+export const readTranscriptionState = async (
+  location: RecordingLocation,
+): Promise<TranscriptDocument | null> => {
+  const stored = await loadTranscript(location);
+  return stored
+    ? transcriptDocumentSchema.parse(stored)
+    : readLegacyTranscriptionState(location);
+};
+
+const resolveSpeakers = async (
+  location: RecordingLocation,
+  document: TranscriptDocument,
+): Promise<SegmentSpeaker[]> => {
+  if (!document.result) return [];
+  const intervals = await loadIntervals(location);
+  validateTranscriptContext(
+    document.result,
+    await readManifest(location),
+    intervals,
+  );
+  const participants = await readParticipants(location);
+  return document.result.segments.map((segment) => {
+    const interval = intervals.find(
+      (i) => i.intervalID === segment.sourceIntervalID,
+    );
+    const userID = interval?.kind === "speaking" ? interval.userID : null;
+    const participant = participants?.participants.find(
+      (p) => p.userID === userID,
+    );
+    return {
+      userID,
+      username: participant?.username ?? null,
+      displayName: participant?.displayName ?? null,
+    };
+  });
+};
+
+export const legacyStorageBackupSchema = z
+  .object({
+    version: z.literal(1),
+    committed: z.boolean(),
+    files: z.array(
+      z.object({ path: z.string(), contents: z.string() }).strict(),
+    ),
+  })
+  .strict();
+
+// Migration is run only by daemon startup, before capture or hook recovery.
+// Preflight every legacy document before modifying any source file.
+export const migrateLegacyStorage = async (
+  paths: GuildscribePaths,
+): Promise<void> => {
+  // A committed recovery bundle also journals interrupted source cleanup.
+  for (const name of await readdir(paths.home)) {
+    if (!/^legacy-storage-backup-.*\.json$/.test(name)) continue;
+    const bundle = legacyStorageBackupSchema.parse(
+      await readJSON(path.join(paths.home, name)),
+    );
+    if (!bundle.committed) continue;
+    for (const entry of bundle.files) {
+      const file = path.resolve(paths.home, entry.path);
+      if (
+        !file.startsWith(path.resolve(paths.home) + path.sep) ||
+        ![
+          "recording.json",
+          "transcription.json",
+          "transcript.json",
+          "transcript.txt",
+        ].includes(path.basename(file))
+      )
+        throw new Error("Invalid migration recovery path");
+      try {
+        if ((await readFile(file, "utf8")) !== entry.contents)
+          throw new Error(
+            "Legacy file changed after migration; refusing cleanup",
+          );
+        const location = locationForDirectory(path.dirname(file));
+        const stored = await loadRecording(location);
+        if (!stored)
+          throw new Error(
+            "Migration cleanup requires its committed database recording",
+          );
+        if (
+          path.basename(file) === "recording.json" &&
+          JSON.stringify(
+            recordingStatement(location, recordingManifestSchema.parse(stored))
+              .params,
+          ) !==
+            JSON.stringify(
+              recordingStatement(
+                location,
+                recordingManifestSchema.parse(JSON.parse(entry.contents)),
+              ).params,
+            )
+        )
+          throw new Error(
+            "Migration cleanup database metadata differs from backup",
+          );
+        if (
+          path.basename(file) !== "recording.json" &&
+          !(await loadTranscript(location))
+        )
+          throw new Error(
+            "Migration cleanup requires its committed transcript",
+          );
+        await rm(file);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+  }
+  const statements = [];
+  const verification: Array<{
+    location: RecordingLocation;
+    manifest: RecordingManifest;
+    document: TranscriptDocument | null;
+  }> = [];
+  const originals: Array<{ file: string; contents: string }> = [];
+  const identities = new Set<string>();
+  for (const { location } of await discoverRecordings(paths)) {
+    const identity = path.basename(location.directory);
+    if (identities.has(identity))
+      throw new Error(
+        "Duplicate recording directories must be reconciled before migration",
+      );
+    identities.add(identity);
+    const existing = await loadRecording(location);
+    let raw: string | null = null;
+    try {
+      raw = await readFile(location.manifestPath, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (raw === null && !existing)
+      throw new Error(
+        "Recording directory has neither database metadata nor a legacy manifest",
+      );
+    const manifest = recordingManifestSchema.parse(
+      raw === null ? existing : JSON.parse(raw),
+    );
+    if (manifest.recordingID !== path.basename(location.directory))
+      throw new Error("Legacy recording identity mismatch");
+    if (
+      existing &&
+      JSON.stringify(
+        recordingStatement(location, recordingManifestSchema.parse(existing))
+          .params,
+      ) !== JSON.stringify(recordingStatement(location, manifest).params)
+    )
+      throw new Error(
+        "Legacy metadata conflicts with the database; reconcile before migration",
+      );
+    statements.push(recordingStatement(location, manifest));
+    const document = await readLegacyTranscriptionState(location);
+    if (document) {
+      if (document.recordingID !== manifest.recordingID)
+        throw new Error("Legacy transcript identity mismatch");
+      const stored = await loadTranscript(location);
+      if (
+        stored &&
+        JSON.stringify(
+          transcriptStatements(transcriptDocumentSchema.parse(stored), []),
+        ) !== JSON.stringify(transcriptStatements(document, []))
+      )
+        throw new Error("Legacy transcript conflicts with the database");
+      statements.push(
+        ...transcriptStatements(
+          document,
+          await resolveSpeakers(location, document),
+        ),
+      );
+    }
+    verification.push({ location, manifest, document });
+    for (const name of [
+      "transcript.txt",
+      "transcript.json",
+      "transcription.json",
+      "recording.json",
+    ]) {
+      const file = path.join(location.directory, name);
+      try {
+        originals.push({ file, contents: await readFile(file, "utf8") });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+  }
+  let backup: string | null = null;
+  const bundle = {
+    version: 1,
+    committed: false,
+    files: originals.map((o) => ({
+      path: path.relative(paths.home, o.file),
+      contents: o.contents,
+    })),
+  };
+  if (originals.length) {
+    // A private recovery bundle, not another runtime metadata source.
+    backup = path.join(
+      paths.home,
+      `legacy-storage-backup-${Date.now()}-${randomUUID()}.json`,
+    );
+    await writeJSON(backup, legacyStorageBackupSchema.parse(bundle));
+  }
+  await databaseCall(databasePathFor(paths.home), statements, true);
+  for (const expected of verification) {
+    const stored = recordingManifestSchema.parse(
+      await loadRecording(expected.location),
+    );
+    if (
+      JSON.stringify(recordingStatement(expected.location, stored).params) !==
+      JSON.stringify(
+        recordingStatement(expected.location, expected.manifest).params,
+      )
+    )
+      throw new Error("Recording migration readback mismatch");
+    if (expected.document) {
+      const transcript = transcriptDocumentSchema.parse(
+        await loadTranscript(expected.location),
+      );
+      if (
+        JSON.stringify(transcriptStatements(transcript, [])) !==
+        JSON.stringify(transcriptStatements(expected.document, []))
+      )
+        throw new Error("Transcript migration readback mismatch");
+    }
+  }
+  if (backup)
+    await writeJSON(
+      backup,
+      legacyStorageBackupSchema.parse({ ...bundle, committed: true }),
+    );
+  for (const original of originals) {
+    if ((await readFile(original.file, "utf8")) !== original.contents)
+      throw new Error("Legacy file changed during migration");
+    await rm(original.file);
+  }
+};
+
 export const readTranscript = async (
   location: RecordingLocation,
 ): Promise<TranscriptDocument> => {
@@ -329,7 +582,7 @@ export const readTranscript = async (
   return document;
 };
 
-const writeTranscriptDocument = async (
+export const writeTranscriptDocument = async (
   location: RecordingLocation,
   document: TranscriptDocument,
 ): Promise<void> => {
@@ -338,36 +591,17 @@ const writeTranscriptDocument = async (
     throw new Error("Transcript recordingID does not match its directory");
   }
   Object.assign(document, validated);
-  await writeJSON(transcriptPathFor(location), validated);
+  await databaseCall(
+    databaseForRecording(location),
+    transcriptStatements(validated, await resolveSpeakers(location, validated)),
+    true,
+  );
 };
 
 export const renderTranscriptText = (result: TranscriptResult): string =>
   result.segments.length === 0
     ? ""
     : `${result.segments.map((segment) => segment.text.trim()).join("\n")}\n`;
-
-const atomicWriteText = async (
-  destination: string,
-  contents: string,
-): Promise<void> => {
-  const temporary = path.join(
-    path.dirname(destination),
-    `.${path.basename(destination)}.${randomUUID()}.tmp`,
-  );
-  const handle = await open(temporary, "wx", 0o600);
-  try {
-    await handle.writeFile(contents, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
-    await rename(temporary, destination);
-  } catch (error) {
-    await rm(temporary, { force: true }).catch(() => undefined);
-    throw error;
-  }
-};
 
 const directoryEntries = async (directory: string) => {
   try {
@@ -443,6 +677,28 @@ export class TranscriptionWorker {
       } catch (error) {
         diagnostic("error", "transcription.recoverySkipped", {
           directory: location.directory,
+          error: sanitizeError(error),
+        });
+      }
+    }
+  }
+
+  public async pollPending(): Promise<void> {
+    if (this.stopping || !this.config.transcriptionHook) return;
+    const [rows] = await databaseCall(databasePathFor(this.paths.home), [
+      {
+        sql: "SELECT recording_id FROM transcripts WHERE status='pending' ORDER BY queued_at",
+        mode: "all",
+      },
+    ]);
+    for (const row of rows as Array<{ recording_id: string }>) {
+      if (this.stopping) break;
+      try {
+        const { location } = await findRecording(this.paths, row.recording_id);
+        this.schedule(location, await readManifest(location));
+      } catch (error) {
+        diagnostic("error", "transcription.pendingSkipped", {
+          recordingID: row.recording_id,
           error: sanitizeError(error),
         });
       }
@@ -558,10 +814,7 @@ export class TranscriptionWorker {
         manifest,
         await loadIntervals(location),
       );
-      await atomicWriteText(
-        path.join(location.directory, "transcript.txt"),
-        renderTranscriptText(result),
-      );
+
       document.status = "complete";
       document.finishedAt = new Date().toISOString();
       document.error = null;
@@ -581,8 +834,7 @@ export class TranscriptionWorker {
         {
           transcription: {
             status: document.status,
-            transcriptJSON: "transcript.json",
-            transcriptText: "transcript.txt",
+            databasePath: databaseForRecording(location),
           },
         },
       );
@@ -629,6 +881,8 @@ export class TranscriptionWorker {
           LANG: process.env.LANG,
           PATH: process.env.PATH,
           TMPDIR: process.env.TMPDIR,
+          GUILDSCRIBE_DATABASE: databaseForRecording(location),
+          GUILDSCRIBE_RECORDING_ID: path.basename(location.directory),
         },
         stdio: ["pipe", "pipe", "pipe"],
       });

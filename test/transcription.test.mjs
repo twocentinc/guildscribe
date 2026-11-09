@@ -23,6 +23,7 @@ import {
 import {
   readTranscriptionState,
   readTranscript,
+  renderTranscriptText,
   transcriptDocumentSchema,
   transcriptResultSchema,
   TranscriptionWorker,
@@ -91,7 +92,13 @@ const successHook = `
 import { readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 const recordingDirectory = process.argv[2];
-const recording = JSON.parse(await readFile(path.join(recordingDirectory, "recording.json"), "utf8"));
+import Database from ${JSON.stringify(import.meta.resolve("better-sqlite3"))};
+if (!process.env.GUILDSCRIBE_DATABASE) throw new Error("Missing database path");
+const database = new Database(process.env.GUILDSCRIBE_DATABASE, {readonly:true});
+const recordingRow = database.prepare("SELECT * FROM recordings WHERE recording_id = ?").get(process.env.GUILDSCRIBE_RECORDING_ID);
+database.close();
+if (!recordingRow || recordingRow.status !== "complete") throw new Error("Missing completed recording metadata");
+const recording = {recordingID:recordingRow.recording_id};
 await writeFile("hook-request.json", JSON.stringify({
   recordingDirectory,
   workingDirectory: process.cwd()
@@ -159,12 +166,7 @@ test("transcription hook publishes validated transcripts and retains PCM", async
     const state = await readTranscriptionState(fixture.location);
     assert.equal(state.status, "complete");
     assert.equal(state.attempts, 1);
-    const transcript = JSON.parse(
-      await readFile(
-        path.join(fixture.location.directory, "transcript.json"),
-        "utf8",
-      ),
-    );
+    const transcript = await readTranscript(fixture.location);
     assert.equal(transcript.schemaVersion, 1);
     assert.equal(transcript.recordingID, fixture.active.manifest.recordingID);
     assert.equal(transcript.status, "complete");
@@ -173,12 +175,14 @@ test("transcription hook publishes validated transcripts and retains PCM", async
       fixture.intervalID,
     );
     assert.equal(transcript.result.segments[1].sourceIntervalID, undefined);
-    assert.equal(
-      await readFile(
-        path.join(fixture.location.directory, "transcript.txt"),
-        "utf8",
-      ),
-      "hello\nworld\n",
+    assert.equal(renderTranscriptText(transcript.result), "hello\nworld\n");
+    await assert.rejects(
+      stat(path.join(fixture.location.directory, "transcript.json")),
+      { code: "ENOENT" },
+    );
+    await assert.rejects(
+      stat(path.join(fixture.location.directory, "transcript.txt")),
+      { code: "ENOENT" },
     );
     assert.equal(
       (
@@ -193,8 +197,7 @@ test("transcription hook publishes validated transcripts and retains PCM", async
       fixture.active.manifest.recordingID,
     );
     assert.equal(inventory.transcriptionStatus, "complete");
-    assert.ok(inventory.transcriptJSONBytes > 0);
-    assert.equal(inventory.transcriptTextBytes, 12);
+    assert.equal(inventory.transcriptSegmentCount, 2);
 
     const captured = JSON.parse(
       await readFile(
@@ -265,9 +268,10 @@ await writeFile(path.join(recordingDirectory, ".transcript-result.json.pending")
 
     const state = await readTranscriptionState(fixture.location);
     assert.equal(state.status, "failed");
-    assert.ok(
-      (await stat(path.join(fixture.location.directory, "transcript.json")))
-        .size > 0,
+    assert.ok(state.error);
+    await assert.rejects(
+      stat(path.join(fixture.location.directory, "transcript.json")),
+      { code: "ENOENT" },
     );
   } finally {
     await rm(fixture.home, { recursive: true, force: true });

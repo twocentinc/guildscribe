@@ -1,3 +1,4 @@
+import { loadRecording, storeRecording } from "./storage.js";
 import {
   EndBehaviorType,
   VoiceConnectionStatus,
@@ -314,10 +315,7 @@ export const createRecording = async (
     recoveredAfterRestart: false,
     error: null,
   };
-  await writeJSON(
-    location.manifestPath,
-    recordingManifestSchema.parse(manifest),
-  );
+  await storeRecording(location, recordingManifestSchema.parse(manifest));
   return { location, manifest };
 };
 
@@ -341,7 +339,7 @@ export const saveManifest = async (
     );
   }
   Object.assign(manifest, validated);
-  await writeJSON(location.manifestPath, validated);
+  await storeRecording(location, validated);
 };
 
 export const readManifest = async (
@@ -349,7 +347,8 @@ export const readManifest = async (
 ): Promise<RecordingManifest> => {
   try {
     const manifest = recordingManifestSchema.parse(
-      JSON.parse(await readFile(location.manifestPath, "utf8")) as unknown,
+      (await loadRecording(location)) ??
+        (JSON.parse(await readFile(location.manifestPath, "utf8")) as unknown),
     );
     if (manifest.recordingID !== path.basename(location.directory)) {
       throw new Error("recordingID does not match the recording directory");
@@ -515,7 +514,9 @@ export const publishRecording = async (
     }
     throw error;
   }
-  return locationForDirectory(destination);
+  const published = locationForDirectory(destination);
+  await storeRecording(published, validated);
+  return published;
 };
 
 // Participant metadata
@@ -565,7 +566,7 @@ const participantSchema = z
     }
   });
 
-const participantDocumentSchema = z
+export const participantDocumentSchema = z
   .object({
     schemaVersion: z.literal(1),
     recordingID: recordingIDSchema,
@@ -777,8 +778,7 @@ export interface RecordingSummary {
   audioFile: string | null;
   audioFileBytes: number;
   transcriptionStatus: TranscriptionStatus | null;
-  transcriptJSONBytes: number;
-  transcriptTextBytes: number;
+  transcriptSegmentCount: number;
   participantCount: number;
   pcmFileCount: number;
   pcmFileBytes: number;
@@ -882,12 +882,6 @@ const summarizeRecording = async (
     readTranscriptionState(discovered.location),
     readParticipants(discovered.location),
   ]);
-  const transcriptJSONBytes =
-    files.find(({ relativePath }) => relativePath === "transcript.json")
-      ?.bytes ?? 0;
-  const transcriptTextBytes =
-    files.find(({ relativePath }) => relativePath === "transcript.txt")
-      ?.bytes ?? 0;
   return {
     recordingID: manifest.recordingID,
     guildID: manifest.guildID,
@@ -904,8 +898,7 @@ const summarizeRecording = async (
     audioFile,
     audioFileBytes,
     transcriptionStatus: transcription?.status ?? null,
-    transcriptJSONBytes,
-    transcriptTextBytes,
+    transcriptSegmentCount: transcription?.result?.segments.length ?? 0,
     participantCount: participants?.participants.length ?? 0,
     pcmFileCount: pcmFiles.length,
     pcmFileBytes: pcmFiles.reduce((total, file) => total + file.bytes, 0),

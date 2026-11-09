@@ -1,3 +1,4 @@
+import { readManifest, locationForDirectory } from "../dist/recording.js";
 import { VoiceConnectionStatus } from "@discordjs/voice";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
@@ -330,8 +331,8 @@ test("simultaneous Discord Opus streams produce separate PCM and a final MP3", a
       ),
     );
 
-    const manifest = JSON.parse(
-      await readFile(path.join(recordingDirectory, "recording.json"), "utf8"),
+    const manifest = await readManifest(
+      locationForDirectory(recordingDirectory),
     );
     channel.members.clear();
     await recorder.handleVoiceStateUpdate(
@@ -348,9 +349,7 @@ test("simultaneous Discord Opus streams produce separate PCM and a final MP3", a
       String(started.getUTCMonth() + 1).padStart(2, "0"),
       recordingID,
     );
-    const complete = JSON.parse(
-      await readFile(path.join(published, "recording.json"), "utf8"),
-    );
+    const complete = await readManifest(locationForDirectory(published));
     assert.equal(complete.status, "complete");
     assert.equal(complete.channelID, CHANNEL_A);
     assert.equal(complete.channelName, `channel-${CHANNEL_A}`);

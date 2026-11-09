@@ -23,11 +23,12 @@ The first working slice provides:
 - `guildscribe startup` commands and install scripts for macOS LaunchAgent
   supervision;
 - recoverable, permanently retained per-speaker PCM intervals with atomic JSON
-  manifests, participant presence metadata, and FFmpeg-rendered combined MP3
+  interval sidecars, participant presence metadata, and FFmpeg-rendered combined MP3
   recordings;
 - executable event hooks for channel and recording lifecycle events; and
-- an optional durable transcription worker that validates and publishes
-  `transcript.json` and `transcript.txt` from one configured executable.
+- an optional durable transcription worker that validates and stores transcript
+  state, text, timing, and speaker snapshots in SQLite;
+- optional Discord message capture with local SQLite full-text search.
 
 Transcription is disabled unless `transcriptionHook` is supplied during
 initialization. Guildscribe does not bundle a model or Nightcrew adapter.
@@ -105,11 +106,49 @@ request:
 After publication, Guildscribe invokes the hook outside the capture loop with
 the recording directory as its only argument. The hook atomically writes the
 complete result to `.transcript-result.json.pending`; Guildscribe validates it,
-embeds it in `transcript.json`, and derives `transcript.txt`. See
+commits it to SQLite, and removes the temporary result. The hook receives
+`GUILDSCRIBE_DATABASE` and `GUILDSCRIBE_RECORDING_ID` for read-only metadata
+queries; `recording.json` is no longer supplied. See
 [the specification](docs/spec.md#transcription-hook) for the exact contract.
 
 The default runtime home is `~/.guildscribe`. Use `--home <absolute-path>` for
-an isolated installation.
+an isolated installation. The database is `guildscribe.sqlite` inside that home.
+On the next daemon start, legacy recording/transcript JSON is validated, backed
+up, imported, and removed; media and participant/interval files stay in place.
+Update existing hooks to use the database before starting the upgraded daemon.
+
+To capture text, set `messageChannelIDs` through `config update` and enable the
+bot's Message Content intent in Discord. The allowlist includes accessible child
+threads. An empty list (the default) leaves text capture disabled. Message text,
+attachment metadata, and embeds are stored locally; attachment binaries and
+historical messages are not downloaded.
+
+## Search, export, and database operations
+
+All commands return the standard JSON envelope. Reads use local SQLite and
+require no Discord connection.
+
+```sh
+guildscribe messages list --channel 222222222222222222 --limit 50
+guildscribe messages get <messageID>
+guildscribe messages search budget --author 333333333333333333
+guildscribe transcript get <recordingID> --include-segments
+guildscribe transcript search budget --speaker 333333333333333333
+guildscribe transcript export <recordingID> --format srt --destination /absolute/path/meeting.srt
+guildscribe transcript retry --request /absolute/path/retry.json --dry-run
+guildscribe database status
+guildscribe database verify
+guildscribe database backup --destination /absolute/path/backup.sqlite
+```
+
+List/search pages include `nextCursor`; use `--cursor` with the same filters.
+Exports also support TXT, JSON, and VTT, never overwrite files, and support
+`--dry-run`. Retry requests contain `{ "recordingID": "<UUID>" }` and queue
+failed work for the daemon; they do not start a daemon or a second hook process.
+Database backups include messages and transcripts, but not recording media.
+Verification checks search indexes without repairing them. See the
+[specification](docs/spec.md#local-history-and-database-operations) for filtering,
+pagination, retry, and backup semantics.
 
 ## macOS startup
 
@@ -147,3 +186,7 @@ Guildscribe and refreshes the LaunchAgent. `scripts/uninstallGlobal.sh` removes
 the LaunchAgent and npm package while preserving `~/.guildscribe` in full.
 Tagged releases run the same checks and attach an attested tarball plus SHA-256
 checksum to GitHub; npm registry publication remains a deliberate manual step.
+
+Contract snapshots freeze the CLI, JSON document formats, and SQLite layout.
+Run `npm test` to check them; intentional versioned changes use
+`npm run contracts:update`. See [contract locking](docs/spec.md#contract-locking).

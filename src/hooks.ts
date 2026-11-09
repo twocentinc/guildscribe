@@ -1,3 +1,4 @@
+import { databasePathFor } from "./storage.js";
 import { spawn } from "node:child_process";
 
 import type { GuildscribeConfig, GuildscribePaths } from "./config.js";
@@ -46,7 +47,7 @@ export const invokeHook = async (
   const executable = hookPathForEvent(config, event);
   if (!executable) return;
   const payload = {
-    version: 1,
+    version: 2,
     protocolVersion: PROTOCOL_VERSION,
     event,
     occurredAt: new Date().toISOString(),
@@ -56,7 +57,7 @@ export const invokeHook = async (
     channelID: manifest.channelID,
     channelName: manifest.channelName ?? null,
     recordingDirectory: location.directory,
-    manifestPath: location.manifestPath,
+    databasePath: databasePathFor(paths.home),
     status: manifest.status,
     audioFile: manifest.status === "complete" ? "audio.mp3" : null,
     ...details,

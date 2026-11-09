@@ -1,10 +1,16 @@
+import {
+  databaseCall,
+  databaseForRecording,
+  databasePathFor,
+  recordingStatement,
+  transcriptStatements,
+} from "./storage.js";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import {
   copyFile,
   lstat,
   mkdir,
-  readFile,
   readdir,
   rm,
   stat,
@@ -23,11 +29,7 @@ import {
 } from "./recording.js";
 import { PCM_FORMAT, validateMP3, runCommand } from "./renderer.js";
 import { GuildscribeError, sanitizeError } from "./protocol.js";
-import {
-  readTranscript,
-  readTranscriptionState,
-  renderTranscriptText,
-} from "./transcription.js";
+import { readTranscript, readTranscriptionState } from "./transcription.js";
 
 export interface VerificationCheck {
   name: string;
@@ -67,7 +69,10 @@ export const verifyRecording = async (
     status: VerificationCheck["status"],
     message: string,
     details?: Record<string, unknown>,
-  ) => checks.push(details ? { name, status, message, details } : { name, status, message });
+  ) =>
+    checks.push(
+      details ? { name, status, message, details } : { name, status, message },
+    );
 
   const manifest = await readManifest(discovered.location);
   add(
@@ -136,12 +141,10 @@ export const verifyRecording = async (
         { bytes: info.size, durationMs, userID: interval.userID },
       );
     } catch (error) {
-      add(
-        `interval.${interval.intervalID}`,
-        "fail",
-        "PCM payload is missing",
-        { error: sanitizeError(error), userID: interval.userID },
-      );
+      add(`interval.${interval.intervalID}`, "fail", "PCM payload is missing", {
+        error: sanitizeError(error),
+        userID: interval.userID,
+      });
     }
   }
 
@@ -188,21 +191,11 @@ export const verifyRecording = async (
     if (!transcription) {
       add("transcription", "pass", "No transcription was requested");
     } else if (transcription.status === "complete") {
-      const transcriptText = path.join(
-        discovered.location.directory,
-        "transcript.txt",
-      );
-      const document = await readTranscript(discovered.location);
-      const readableText = await readFile(transcriptText, "utf8");
-      const valid =
-        document.result !== null &&
-        readableText === renderTranscriptText(document.result);
+      await readTranscript(discovered.location);
       add(
         "transcription",
-        valid ? "pass" : "fail",
-        valid
-          ? "Completed transcript artifacts are valid and consistent"
-          : "transcript.txt does not match transcript.json",
+        "pass",
+        "Completed transcript database rows are valid",
       );
     } else {
       add(
@@ -277,9 +270,17 @@ export const exportRecording = async (
       { details: { destination: normalizedDestination } },
     );
   }
-  const sourceFiles = (await collectRecordingFiles(discovered.location.directory))
+  const sourceFiles = (
+    await collectRecordingFiles(discovered.location.directory)
+  )
     .filter(
       ({ relativePath }) =>
+        ![
+          "recording.json",
+          "transcript.json",
+          "transcription.json",
+          "transcript.txt",
+        ].includes(relativePath) &&
         relativePath !== ".transcript-result.json.pending" &&
         !relativePath.startsWith(".transcript-result.json.pending.") &&
         relativePath !== ".transcript.json.pending" &&
@@ -287,6 +288,7 @@ export const exportRecording = async (
     )
     .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
   const plannedFiles = sourceFiles.map(({ relativePath }) => relativePath);
+  plannedFiles.push("guildscribe.sqlite");
   if (options.wav) plannedFiles.push("audio.wav");
   plannedFiles.push("checksums.sha256");
   if (options.dryRun) {
@@ -309,6 +311,40 @@ export const exportRecording = async (
         target,
       );
     }
+    // The export contains only this recording, never other meetings or messages.
+    const manifest = await readManifest(discovered.location);
+    const record = recordingStatement(discovered.location, manifest);
+    (record.params as Record<string, unknown>).directory_path = ".";
+    const statements = [record];
+    const transcript = await readTranscriptionState(discovered.location);
+    if (transcript) {
+      const [rows] = await databaseCall(
+        databaseForRecording(discovered.location),
+        [
+          {
+            sql: "SELECT * FROM transcript_segments WHERE recording_id = ? ORDER BY segment_index",
+            params: [recordingID],
+            mode: "all",
+          },
+        ],
+      );
+      const segments = rows as Record<string, unknown>[];
+      statements.push(
+        ...transcriptStatements(
+          transcript,
+          segments.map((row) => ({
+            userID: row.speaker_user_id as string | null,
+            username: row.speaker_username as string | null,
+            displayName: row.speaker_display_name as string | null,
+          })),
+        ),
+      );
+    }
+    await databaseCall(
+      databasePathFor(normalizedDestination),
+      statements,
+      true,
+    );
     let wavFile: string | null = null;
     if (options.wav) {
       const audio = path.join(normalizedDestination, "audio.mp3");
