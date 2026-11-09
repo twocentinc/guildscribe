@@ -2,7 +2,11 @@ import { spawn } from "node:child_process";
 import { open, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
-import type { RecordingInterval, RecordingLocation } from "./recording.js";
+import {
+  intervalPCMPath,
+  type RecordingInterval,
+  type RecordingLocation,
+} from "./recording.js";
 import { GuildscribeError, sanitizeError } from "./protocol.js";
 
 export const PCM_FORMAT = {
@@ -115,12 +119,7 @@ const collectSources = async (
   const sources: PCMSource[] = [];
   for (const interval of intervals) {
     if (interval.kind !== "speaking") continue;
-    const pcmPath = interval.pcmFile
-      ? path.join(
-          location.intervalsDirectory,
-          path.basename(interval.pcmFile),
-        )
-      : null;
+    const pcmPath = intervalPCMPath(location, interval);
     if (!pcmPath) continue;
     try {
       const info = await stat(pcmPath);

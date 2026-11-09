@@ -36,8 +36,10 @@ Saratonin so it can be published and installed on its own.
   `~/.guildscribe`; do not add a database without a new concrete requirement.
 - Write JSON manifests and interval sidecars atomically.
 - Validate every persistent recording document with its strict Zod schema on
-  both read and write. Require recording identity to match its directory and
-  keep retained PCM self-describing through the manifest's fixed format.
+  both read and write. Require recording identity to match its directory.
+- Recording schema version 1 defines interval PCM as signed 16-bit little-endian,
+  48 kHz stereo. Keep that fixed instead of repeating configurable format
+  metadata in each recording.
 - Keep source files and runtime data separate. Never write runtime files into
   the repository checkout.
 - Keep the configuration file and runtime home owner-only because `.env`
@@ -154,10 +156,10 @@ section so it can be copied without carrying Guildscribe behavior with it.
   retain enough state to recover pending work after restart.
 - Invoke the transcription executable with the absolute recording directory as
   its sole argument and working directory. It receives no structured stdin.
-  Require it to atomically write the complete `.transcript.json.pending` and
-  exit zero; Guildscribe validates that response with Zod and promotes it.
-  Never let an external hook own canonical transcript or transcription-state
-  files.
+  Require it to atomically write `.transcript-result.json.pending` and exit
+  zero; Guildscribe validates and embeds that result into canonical
+  `transcript.json`. Never let an external hook own canonical transcript state
+  or `transcript.txt`.
 - Retain interval PCM permanently with the completed recording, regardless of
   whether transcription is enabled or succeeds. Rendering and processing must
   never delete captured PCM.

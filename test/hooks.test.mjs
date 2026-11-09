@@ -33,19 +33,18 @@ await writeFile("hook-output.json", JSON.stringify({ argument: process.argv[2], 
   await chmod(executable, 0o700);
 
   const manifest = {
-    version: 1,
+    schemaVersion: 1,
     recordingID: "recording-1",
     guildID: "111111111111111111",
+    guildName: null,
     channelID: "222222222222222222",
+    channelName: null,
     status: "recording",
     startedAt: "2026-11-05T00:00:00.000Z",
     updatedAt: "2026-11-05T00:00:00.000Z",
-    emptySince: null,
     endedAt: null,
     durationMs: null,
-    interrupted: false,
-    audioFile: null,
-    intervalCount: 0,
+    recoveredAfterRestart: false,
     error: null,
   };
   const location = {

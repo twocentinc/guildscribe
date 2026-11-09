@@ -17,7 +17,7 @@ import {
 import { renderMaster } from "../dist/renderer.js";
 import { recoverRecordings } from "../dist/recording.js";
 
-test("recording manifests retain speaker metadata and publish validated audio", async () => {
+test("recording manifests retain PCM intervals and publish validated audio", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "guildscribe-recording-"));
   const paths = getPaths(root);
   const started = new Date("2026-11-05T12:00:00.000Z");
@@ -29,29 +29,27 @@ test("recording manifests retain speaker metadata and publish validated audio", 
       started,
     );
     const interval = {
-      version: 1,
+      schemaVersion: 1,
       intervalID: "11111111-1111-4111-8111-111111111111",
       recordingID: active.manifest.recordingID,
       kind: "speaking",
       userID: "333333333333333333",
-      username: "speaker",
-      displayName: "Speaker Name",
       startOffsetMs: 0,
       endOffsetMs: 0,
       incomplete: false,
-      reason: null,
-      pcmFile: "11111111-1111-4111-8111-111111111111.pcm",
-      updatedAt: started.toISOString(),
     };
     const pcm = Buffer.alloc((48_000 * 2 * 2) / 5);
     await writeFile(
-      path.join(active.location.intervalsDirectory, interval.pcmFile),
+      path.join(
+        active.location.intervalsDirectory,
+        `${interval.intervalID}.pcm`,
+      ),
       pcm,
     );
     await saveInterval(active.location, interval);
     const intervals = await loadIntervals(active.location);
     assert.equal(intervals.length, 1);
-    assert.equal(intervals[0].displayName, "Speaker Name");
+    assert.equal(intervals[0].userID, "333333333333333333");
     assert.equal(await capturedDurationMs(active.location, intervals), 200);
 
     active.manifest.status = "finalizing";
@@ -65,8 +63,6 @@ test("recording manifests retain speaker metadata and publish validated audio", 
     );
 
     active.manifest.status = "complete";
-    active.manifest.audioFile = "audio.mp3";
-    active.manifest.intervalCount = intervals.length;
     await saveManifest(active.location, active.manifest);
     const published = await publishRecording(
       paths,
@@ -78,14 +74,14 @@ test("recording manifests retain speaker metadata and publish validated audio", 
       await readFile(published.manifestPath, "utf8"),
     );
     assert.equal(finalManifest.status, "complete");
-    assert.deepEqual(finalManifest.pcmFormat, {
-      encoding: "s16le",
-      sampleRateHz: 48_000,
-      channels: 2,
-    });
+    assert.equal(finalManifest.schemaVersion, 1);
+    assert.equal("pcmFormat" in finalManifest, false);
     assert.equal(
-      (await stat(path.join(published.intervalsDirectory, interval.pcmFile)))
-        .size,
+      (
+        await stat(
+          path.join(published.intervalsDirectory, `${interval.intervalID}.pcm`),
+        )
+      ).size,
       pcm.length,
     );
   } finally {
@@ -93,7 +89,7 @@ test("recording manifests retain speaker metadata and publish validated audio", 
   }
 });
 
-test("recording schemas normalize legacy PCM metadata and reject unsafe identity", async () => {
+test("recording schemas read legacy manifests and reject unsafe identity", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "guildscribe-schema-"));
   const paths = getPaths(root);
   try {
@@ -103,17 +99,50 @@ test("recording schemas normalize legacy PCM metadata and reject unsafe identity
       "222222222222222222",
       new Date("2026-11-05T12:00:00.000Z"),
     );
-    const legacy = JSON.parse(
-      await readFile(active.location.manifestPath, "utf8"),
-    );
-    delete legacy.pcmFormat;
+    const legacy = {
+      version: 1,
+      recordingID: active.manifest.recordingID,
+      guildID: active.manifest.guildID,
+      guildName: null,
+      channelID: active.manifest.channelID,
+      channelName: null,
+      status: "recording",
+      startedAt: active.manifest.startedAt,
+      updatedAt: active.manifest.updatedAt,
+      emptySince: null,
+      endedAt: null,
+      durationMs: null,
+      interrupted: false,
+      audioFile: null,
+      intervalCount: 0,
+      error: null,
+    };
     await writeFile(active.location.manifestPath, JSON.stringify(legacy));
     const normalized = await readManifest(active.location);
-    assert.deepEqual(normalized.pcmFormat, {
-      encoding: "s16le",
-      sampleRateHz: 48_000,
-      channels: 2,
-    });
+    assert.equal(normalized.schemaVersion, 1);
+    assert.equal(normalized.recoveredAfterRestart, false);
+    const legacyIntervalID = "99999999-9999-4999-8999-999999999999";
+    await writeFile(
+      path.join(active.location.intervalsDirectory, `${legacyIntervalID}.json`),
+      JSON.stringify({
+        version: 1,
+        intervalID: legacyIntervalID,
+        recordingID: active.manifest.recordingID,
+        kind: "speaking",
+        userID: "333333333333333333",
+        username: "speaker",
+        displayName: "Speaker",
+        startOffsetMs: 0,
+        endOffsetMs: 100,
+        incomplete: false,
+        reason: null,
+        pcmFile: `${legacyIntervalID}.pcm`,
+        updatedAt: active.manifest.startedAt,
+      }),
+    );
+    const [normalizedInterval] = await loadIntervals(active.location);
+    assert.equal(normalizedInterval.schemaVersion, 1);
+    assert.equal("pcmFile" in normalizedInterval, false);
     await assert.rejects(
       saveManifest(active.location, {
         ...normalized,
@@ -129,19 +158,14 @@ test("recording schemas normalize legacy PCM metadata and reject unsafe identity
 
     await assert.rejects(
       saveInterval(active.location, {
-        version: 1,
+        schemaVersion: 1,
         intervalID: "../escape",
         recordingID: active.manifest.recordingID,
         kind: "speaking",
         userID: "333333333333333333",
-        username: "speaker",
-        displayName: "Speaker",
         startOffsetMs: 0,
         endOffsetMs: 100,
         incomplete: false,
-        reason: null,
-        pcmFile: "../escape.pcm",
-        updatedAt: active.manifest.startedAt,
       }),
     );
   } finally {
@@ -161,22 +185,20 @@ test("daemon recovery renders an interrupted capture", async () => {
       started,
     );
     const interval = {
-      version: 1,
+      schemaVersion: 1,
       intervalID: "22222222-2222-4222-8222-222222222222",
       recordingID: active.manifest.recordingID,
       kind: "speaking",
       userID: "333333333333333333",
-      username: "speaker",
-      displayName: "Speaker",
       startOffsetMs: 0,
       endOffsetMs: 100,
       incomplete: true,
-      reason: null,
-      pcmFile: "22222222-2222-4222-8222-222222222222.pcm",
-      updatedAt: started.toISOString(),
     };
     await writeFile(
-      path.join(active.location.intervalsDirectory, interval.pcmFile),
+      path.join(
+        active.location.intervalsDirectory,
+        `${interval.intervalID}.pcm`,
+      ),
       Buffer.alloc((48_000 * 2 * 2) / 10),
     );
     await saveInterval(active.location, interval);
@@ -197,11 +219,14 @@ test("daemon recovery renders an interrupted capture", async () => {
       await readFile(path.join(published, "recording.json"), "utf8"),
     );
     assert.equal(recovered.status, "complete");
-    assert.equal(recovered.interrupted, true);
+    assert.equal(recovered.recoveredAfterRestart, true);
     assert.ok((await stat(path.join(published, "audio.mp3"))).size > 0);
     assert.ok(
-      (await stat(path.join(published, "intervals", interval.pcmFile)))
-        .size > 0,
+      (
+        await stat(
+          path.join(published, "intervals", `${interval.intervalID}.pcm`),
+        )
+      ).size > 0,
     );
   } finally {
     await rm(root, { recursive: true, force: true });

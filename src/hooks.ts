@@ -58,7 +58,7 @@ export const invokeHook = async (
     recordingDirectory: location.directory,
     manifestPath: location.manifestPath,
     status: manifest.status,
-    audioFile: manifest.audioFile,
+    audioFile: manifest.status === "complete" ? "audio.mp3" : null,
     ...details,
   };
   await new Promise<void>((resolve) => {

@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1;
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const EXIT_CODES = {
   success: 0,
@@ -193,7 +193,7 @@ const recordingSummarySchema = z.object({
   startedAt: z.string(),
   endedAt: z.string().nullable(),
   durationMs: z.number().nullable(),
-  interrupted: z.boolean(),
+  recoveredAfterRestart: z.boolean(),
   audioFile: z.string().nullable(),
   audioFileBytes: z.number().int(),
   transcriptionStatus: z.string().nullable(),

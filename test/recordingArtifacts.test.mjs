@@ -1,11 +1,5 @@
 import assert from "node:assert/strict";
-import {
-  mkdtemp,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -42,43 +36,34 @@ const createVerifiedRecording = async () => {
     username: "speaker",
     displayName: "Speaker",
   };
-  await initializeParticipants(
-    active.location,
-    active.manifest.recordingID,
-    [speaker],
-    active.manifest.startedAt,
-  );
+  await initializeParticipants(active.location, active.manifest.recordingID, [
+    speaker,
+  ]);
   const interval = {
-    version: 1,
+    schemaVersion: 1,
     intervalID: "33333333-3333-4333-8333-333333333333",
     recordingID: active.manifest.recordingID,
     kind: "speaking",
-    ...speaker,
+    userID: speaker.userID,
     startOffsetMs: 0,
     endOffsetMs: 200,
     incomplete: false,
-    reason: null,
-    pcmFile: "33333333-3333-4333-8333-333333333333.pcm",
-    updatedAt: active.manifest.startedAt,
   };
   await writeFile(
-    path.join(active.location.intervalsDirectory, interval.pcmFile),
+    path.join(active.location.intervalsDirectory, `${interval.intervalID}.pcm`),
     Buffer.alloc((48_000 * 2 * 2) / 5),
   );
   await saveInterval(active.location, interval);
   active.manifest.status = "finalizing";
   active.manifest.endedAt = "2026-11-05T12:00:00.200Z";
   active.manifest.durationMs = 200;
-  active.manifest.intervalCount = 1;
   await finalizeParticipants(
     active.location,
     active.manifest.recordingID,
-    [interval],
     active.manifest.endedAt,
   );
-  const rendered = await renderMaster(active.location, 200, [interval]);
+  await renderMaster(active.location, 200, [interval]);
   active.manifest.status = "complete";
-  active.manifest.audioFile = rendered.audioFile;
   await saveManifest(active.location, active.manifest);
   const location = await publishRecording(
     paths,
@@ -117,40 +102,27 @@ test("recording verification applies the canonical transcript schema and text pr
   const fixture = await createVerifiedRecording();
   try {
     await writeFile(
-      path.join(fixture.location.directory, "transcription.json"),
+      path.join(fixture.location.directory, "transcript.json"),
       `${JSON.stringify({
-        version: 1,
+        schemaVersion: 1,
         recordingID: fixture.active.manifest.recordingID,
         status: "complete",
         attempts: 1,
-        createdAt: "2026-11-05T12:00:00.200Z",
-        updatedAt: "2026-11-05T12:00:00.400Z",
+        queuedAt: "2026-11-05T12:00:00.200Z",
         startedAt: "2026-11-05T12:00:00.300Z",
-        completedAt: "2026-11-05T12:00:00.400Z",
+        finishedAt: "2026-11-05T12:00:00.400Z",
         error: null,
-      })}\n`,
-    );
-    await writeFile(
-      path.join(fixture.location.directory, "transcript.json"),
-      `${JSON.stringify({
-        version: 1,
-        recordingID: fixture.active.manifest.recordingID,
-        createdAt: "2026-11-05T12:00:00.400Z",
-        language: "en",
-        text: "hello",
-        segments: [
-          {
-            startOffsetMs: 0,
-            endOffsetMs: 200,
-            text: "hello",
-            sourceIntervalIDs: [fixture.interval.intervalID],
-            speaker: {
-              userID: fixture.interval.userID,
-              username: fixture.interval.username,
-              displayName: fixture.interval.displayName,
+        result: {
+          language: "en",
+          segments: [
+            {
+              startOffsetMs: 0,
+              endOffsetMs: 200,
+              text: "hello",
+              sourceIntervalID: fixture.interval.intervalID,
             },
-          },
-        ],
+          ],
+        },
       })}\n`,
     );
     await writeFile(
@@ -176,8 +148,7 @@ test("recording verification applies the canonical transcript schema and text pr
       fixture.active.manifest.recordingID,
     );
     assert.equal(
-      inconsistent.checks.find(({ name }) => name === "transcription")
-        ?.status,
+      inconsistent.checks.find(({ name }) => name === "transcription")?.status,
       "fail",
     );
   } finally {
@@ -209,8 +180,15 @@ test("recording export creates a portable checksummed directory and optional WAV
     assert.ok((await stat(path.join(destination, "audio.mp3"))).size > 0);
     assert.ok((await stat(path.join(destination, "audio.wav"))).size > 0);
     assert.ok(
-      (await stat(path.join(destination, "intervals", "33333333-3333-4333-8333-333333333333.pcm")))
-        .size > 0,
+      (
+        await stat(
+          path.join(
+            destination,
+            "intervals",
+            "33333333-3333-4333-8333-333333333333.pcm",
+          ),
+        )
+      ).size > 0,
     );
     const checksums = await readFile(
       path.join(destination, "checksums.sha256"),

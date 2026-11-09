@@ -30,7 +30,7 @@ The implemented slice:
 - renders and validates one combined MP3;
 - preserves interrupted recordings and recovers their captured audio after a
   restart;
-- records versioned participant presence history and speaking duration;
+- records versioned participant presence history on the recording timeline;
 - exposes redacted configuration, live status, artifact verification, and
   portable checksummed exports through agent-safe JSON commands;
 - invokes optional local executable hooks for recording events; and
@@ -167,7 +167,6 @@ another home for every command.
         <recordingID>/
           recording.json
           participants.json
-          transcription.json
           transcript.json
           transcript.txt
           intervals/
@@ -234,51 +233,113 @@ is required; it does not silently restart the recorder.
 
 ## Persistent documents
 
-`recording.json`, `participants.json`, `transcription.json`, `transcript.json`,
-and every interval sidecar are versioned JSON documents.
+`recording.json`, `participants.json`, `transcript.json`, and every interval
+sidecar are versioned JSON documents.
 Guildscribe writes its documents through a same-directory temporary file and
 atomic rename. Every persistent document is parsed through a strict Zod schema
 on read and write. Recording IDs are UUIDs and must match their directory;
-Discord IDs are decimal snowflakes. The recording manifest records identity,
-lifecycle state, timestamps, duration, final audio filename, interruption
-status, sanitized failure, and the retained PCM format:
+Discord IDs are decimal snowflakes. `schemaVersion` is the document-format
+version. Legacy documents using `version` remain readable.
+
+The recording manifest records identity, optional observed names, lifecycle
+state, timestamps, duration, restart recovery, and sanitized failure:
 
 ```json
 {
-  "encoding": "s16le",
-  "sampleRateHz": 48000,
-  "channels": 2
+  "schemaVersion": 1,
+  "recordingID": "00000000-0000-4000-8000-000000000000",
+  "guildID": "111111111111111111",
+  "guildName": "Example Guild",
+  "channelID": "222222222222222222",
+  "channelName": "Meeting Room",
+  "status": "complete",
+  "startedAt": "2026-11-05T12:00:00.000Z",
+  "updatedAt": "2026-11-05T12:30:30.000Z",
+  "endedAt": "2026-11-05T12:30:00.000Z",
+  "durationMs": 1800000,
+  "recoveredAfterRestart": false,
+  "error": null
 }
 ```
 
-Legacy version-1 manifests without `pcmFormat` normalize to this fixed format;
-every new manifest write persists it. Lifecycle validation requires recording
-state to have no completion fields, finalizing state to have end and duration,
-complete state to also reference `audio.mp3`, and failed state to contain a
-sanitized error.
+`updatedAt` is the last durable manifest mutation, not general recording
+activity. `endedAt` is the meeting boundary when the last human left and
+excludes empty-channel grace and rendering time. Lifecycle validation requires
+recording state to have no completion fields, finalizing and complete state to
+have end and duration, and failed state to contain a sanitized error. Complete
+recordings use the fixed filename `audio.mp3`; interval counts are derived from
+the filesystem. Schema version 1 fixes PCM at signed 16-bit little-endian,
+48 kHz stereo and does not make that format configurable.
 
 Speaking interval sidecars record:
 
 - interval and recording IDs;
-- Discord user ID, username, and display name;
+- Discord user ID;
 - meeting-relative start and end offsets;
-- PCM filename while capture is in progress; and
 - whether the interval ended incompletely.
 
-Connection-gap sidecars use the same timing fields with a gap reason and no
-speaker. Display names never appear in filenames.
+Speaking PCM is always `intervals/<intervalID>.pcm`. Connection-gap sidecars use
+the same timing fields with required reason `voiceDisconnected` and no speaker
+or PCM payload. Usernames and display names live only in `participants.json`.
+
+```json
+{
+  "schemaVersion": 1,
+  "intervalID": "00000000-0000-4000-8000-000000000001",
+  "recordingID": "00000000-0000-4000-8000-000000000000",
+  "kind": "speaking",
+  "userID": "333333333333333333",
+  "startOffsetMs": 12500,
+  "endOffsetMs": 14750,
+  "incomplete": false
+}
+```
+
+```json
+{
+  "schemaVersion": 1,
+  "intervalID": "00000000-0000-4000-8000-000000000002",
+  "recordingID": "00000000-0000-4000-8000-000000000000",
+  "kind": "connectionGap",
+  "startOffsetMs": 120000,
+  "endOffsetMs": 128500,
+  "incomplete": false,
+  "reason": "voiceDisconnected"
+}
+```
 
 `participants.json` contains one record for every human observed in the
-meeting. Each participant has Discord identity metadata, an ordered list of
-join/leave sessions, and total speaking duration derived from durable speaking
-intervals. Open sessions are closed at the meeting end. This document is
-meeting metadata, not a transcript and not a replacement for interval timing.
+meeting. Each participant has the most recently observed Discord username and
+display name plus an ordered, non-overlapping list of presence sessions using
+`startOffsetMs` and nullable `endOffsetMs`. Open sessions are closed at the
+meeting end. Speaking duration is derived from interval sidecars rather than
+stored redundantly. New recordings require nonempty names; legacy missing or
+null names remain readable as null.
 
-`transcription.json` records the independent worker state, attempt count,
-timestamps, and sanitized failure. `transcript.json` contains the validated
-version-1 transcript document; `transcript.txt` is its readable text projection.
-The `.transcript.json.pending` response is atomically renamed after successful
-validation and may remain after failure for inspection.
+```json
+{
+  "schemaVersion": 1,
+  "recordingID": "00000000-0000-4000-8000-000000000000",
+  "participants": [
+    {
+      "userID": "333333333333333333",
+      "username": "speaker",
+      "displayName": "Speaker",
+      "sessions": [
+        {
+          "startOffsetMs": 0,
+          "endOffsetMs": 1800000
+        }
+      ]
+    }
+  ]
+}
+```
+
+`transcript.json` combines transcription lifecycle state and the validated
+result. `transcript.txt` is the sole full readable transcript. The transient
+`.transcript-result.json.pending` file is an external hook response, not a
+durable document.
 
 ## Recording lifecycle
 
@@ -294,11 +355,12 @@ one in configuration order wins. Once selected, the active channel remains
 exclusive: activity in other allowed channels is ignored until the recording's
 empty grace and finalization both finish.
 
-When the active channel becomes empty Guildscribe persists `emptySince` and
-starts the configured grace timer. A returning human to that channel clears the
-value and continues the same meeting. Humans entering another allowed channel
-do not cancel the active channel's grace. Grace expiry uses `emptySince` as the
-meeting end, disconnects the bot, closes active intervals, and begins rendering.
+When the active channel becomes empty Guildscribe keeps the grace boundary in
+daemon memory and starts the configured grace timer. A returning human to that
+channel clears the timer and continues the same meeting. Humans entering
+another allowed channel do not cancel the active channel's grace. Grace expiry
+uses the original boundary as the meeting end, disconnects the bot, closes
+active intervals, and begins rendering.
 After publication or failure, Guildscribe may immediately select another
 occupied allowed channel.
 
@@ -313,9 +375,9 @@ month. A failure leaves recoverable data in `in-progress` with a sanitized
 failure in the manifest. PCM retention never depends on transcription state.
 
 At daemon startup Guildscribe scans `in-progress`. A recording interrupted
-during capture is marked interrupted and rendered using its last durable
-interval offsets. A recording interrupted during finalization is rendered
-again. A valid existing `audio.mp3` is reused.
+during capture or empty-channel grace is marked `recoveredAfterRestart` and
+rendered using its last durable interval offsets. A recording interrupted
+during finalization is rendered again. A valid existing `audio.mp3` is reused.
 
 ## Event hooks
 
@@ -361,14 +423,15 @@ setting disables transcription. Guildscribe does not choose or bundle a model
 adapter. The worker has its own durable lifecycle and is not subject to the
 short lifecycle-hook timeout.
 
-After a completed recording is durable, Guildscribe writes
-`transcription.json` with status `pending` and schedules the recording on a
-single serial worker. Enqueueing only waits for that state write; model work
-runs outside the Discord capture loop. The states are `pending`, `running`,
-`complete`, and `failed`, with attempt count, timestamps, and a sanitized error.
-Daemon startup requeues `pending` work and converts an interrupted `running`
-state back to `pending`. It does not automatically retry `failed` work or
-retroactively enqueue recordings that predate configuration of the hook.
+After a completed recording is durable, Guildscribe writes `transcript.json`
+with status `pending` and schedules the recording on a single serial worker.
+Enqueueing only waits for that state write; model work runs outside the Discord
+capture loop. The states are `pending`, `running`, `complete`, and `failed`.
+The document retains `attempts`, `queuedAt`, nullable `startedAt`, nullable
+`finishedAt`, a sanitized nullable `error`, and a nullable `result`. Daemon
+startup requeues `pending` work and converts an interrupted `running` state back
+to `pending`. It does not automatically retry `failed` work or retroactively
+enqueue recordings that predate configuration of the hook.
 
 Guildscribe invokes the executable with exactly one positional argument:
 
@@ -384,47 +447,57 @@ JSON/PCM pairs below `intervals/`.
 The restricted child environment contains only ordinary process-location
 values and never contains the Discord token. Before exiting successfully, the
 executable atomically writes this complete result document to
-`.transcript.json.pending`:
+`.transcript-result.json.pending`:
 
 ```json
 {
-  "version": 1,
-  "recordingID": "...",
-  "createdAt": "2026-11-05T12:30:01.000Z",
   "language": "en",
-  "text": "Readable full transcript.",
   "segments": [
     {
       "startOffsetMs": 0,
       "endOffsetMs": 1200,
       "text": "Readable segment text.",
-      "sourceIntervalIDs": ["00000000-0000-4000-8000-000000000000"],
-      "speaker": {
-        "userID": "...",
-        "username": "speaker",
-        "displayName": "Speaker"
-      }
+      "sourceIntervalID": "00000000-0000-4000-8000-000000000000"
     }
   ]
 }
 ```
 
-`recordingID` must match `recording.json`. `language` may be `null`; `speaker`
-is optional but must contain at least one identity field when present.
-`sourceIntervalIDs` is optional for combined-audio transcription; when present,
-every unique UUID must identify overlapping speaking audio in the same
-recording and any Discord speaker ID must agree with that source. Segments must
-contain nonempty text, have valid nonnegative ranges, be ordered by
-`startOffsetMs`, and remain within the recording duration. Exit code zero is
-accepted only when the pending document exists and passes this Zod-enforced
-schema.
+`language` is a nullable BCP 47 tag. `sourceIntervalID` is optional for
+combined-audio transcription; when present, it must identify overlapping
+speaking audio in the same recording. Speaker identity is resolved through the
+source interval and `participants.json` rather than duplicated in transcript
+segments. Segments must contain nonempty text, have positive nonnegative
+ranges, be ordered by `startOffsetMs`, and remain within the recording
+duration. Exit code zero is accepted only when the pending result exists and
+passes this Zod-enforced schema.
 
 The pending document is the hook's response; stdout and stderr are bounded
-diagnostics only. The hook must not write canonical `transcript.json`,
-`transcript.txt`, or `transcription.json` files. After the hook exits zero,
-Guildscribe validates the completed file once, atomically renames it to
-`transcript.json`, derives `transcript.txt` from `text`, then persists status
-`complete`. The hook must remain running until its atomic write is complete;
+diagnostics only. The hook must not write canonical `transcript.json` or
+`transcript.txt`. After the hook exits zero, Guildscribe validates the result,
+derives `transcript.txt` by joining ordered segment text with newlines, embeds
+the result in `transcript.json`, and atomically persists status `complete`:
+
+```json
+{
+  "schemaVersion": 1,
+  "recordingID": "00000000-0000-4000-8000-000000000000",
+  "status": "complete",
+  "attempts": 1,
+  "queuedAt": "2026-11-05T12:30:00.000Z",
+  "startedAt": "2026-11-05T12:30:01.000Z",
+  "finishedAt": "2026-11-05T12:31:00.000Z",
+  "error": null,
+  "result": {
+    "language": "en",
+    "segments": []
+  }
+}
+```
+
+`result` is null before completion and on failure. Failed work requires both
+`finishedAt` and `error`; complete work requires `finishedAt` and `result`. The
+hook must remain running until its atomic write is complete;
 Guildscribe does not poll an invalid file indefinitely. A nonzero exit, spawn
 failure, missing result, or invalid result
 persists status `failed`. Graceful daemon shutdown returns an in-flight job to
@@ -480,8 +553,8 @@ Shared options are:
 Finite commands emit one compact protocol-version-1 JSON envelope on stdout.
 Presentation formatting belongs to the caller. Errors use stable codes,
 structured details, exit classes, and `safe`, `unsafe`, or `never` retry
-classifications. Diagnostics use stderr. Secrets never appear in output. Schema
-version 1 is independently discoverable through doctor.
+classifications. Diagnostics use stderr. Secrets never appear in output. CLI
+schema version 3 is independently discoverable through doctor.
 
 ### Recording inventory
 
@@ -504,8 +577,9 @@ transcript contents.
 heartbeat time, Discord readiness, last sanitized runtime error, and one health
 classification: `stopped`, `starting`, `ready`, `recording`, `degraded`,
 `stopping`, or `stale`. It also reports the configured channel allowlist,
-whether transcription is enabled, the active recording and any empty-channel
-grace deadline, the latest published recording, and aggregate storage totals.
+whether transcription is enabled, the active recording, the latest published
+recording, and aggregate storage totals. Empty-channel grace is intentionally
+ephemeral daemon state and is not reported from disk.
 It never contacts Discord, returns the token, or mutates state. A malformed
 lock is not proof that a daemon exists; a live lock without a current,
 PID-matched heartbeat is `stale`.
@@ -622,9 +696,11 @@ in-progress recovery state, recordings, exports, or any other runtime data.
 
 ## Transcription and Nightcrew boundary
 
-Guildscribe publishes `transcript.json` as the canonical versioned document and
-`transcript.txt` as a readable projection. Speaker is an optional
-transcript-segment field so unattributed results still use the format.
+Guildscribe publishes `transcript.json` as the canonical versioned state and
+structured-result document and `transcript.txt` as its readable projection.
+Speaker identity is optional: a segment with `sourceIntervalID` resolves its
+Discord user through the interval sidecar, while unattributed mixed-audio
+segments omit that property.
 
 For Discord recordings, Guildscribe passes the recording-directory path to the
 configured transcription hook. The hook can read retained speaker-attributed
@@ -663,8 +739,8 @@ No reasoning stage follows transcription.
 - Recording hooks cannot invalidate completed media.
 - Status, configuration reads, and inventory never reveal the Discord token.
 - Configuration updates are atomic, previewable, and preserve channel order.
-- Participant join/leave history and speaking duration remain available without
-  reading audio or transcript contents.
+- Participant join/leave history remains available without reading audio or
+  transcript contents, and speaking duration is derivable from intervals.
 - Verification is read-only and detects missing or malformed recording
   artifacts.
 - Export creates a checksummed portable copy without changing its source.

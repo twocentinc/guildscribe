@@ -742,9 +742,6 @@
           "null"
         ]
       },
-      "interrupted": {
-        "type": "boolean"
-      },
       "participantCount": {
         "maximum": 9007199254740991,
         "minimum": -9007199254740991,
@@ -762,6 +759,9 @@
       },
       "recordingID": {
         "type": "string"
+      },
+      "recoveredAfterRestart": {
+        "type": "boolean"
       },
       "startedAt": {
         "type": "string"
@@ -810,7 +810,7 @@
       "startedAt",
       "endedAt",
       "durationMs",
-      "interrupted",
+      "recoveredAfterRestart",
       "audioFile",
       "audioFileBytes",
       "transcriptionStatus",
@@ -960,9 +960,6 @@
                 "null"
               ]
             },
-            "interrupted": {
-              "type": "boolean"
-            },
             "participantCount": {
               "maximum": 9007199254740991,
               "minimum": -9007199254740991,
@@ -980,6 +977,9 @@
             },
             "recordingID": {
               "type": "string"
+            },
+            "recoveredAfterRestart": {
+              "type": "boolean"
             },
             "startedAt": {
               "type": "string"
@@ -1028,7 +1028,7 @@
             "startedAt",
             "endedAt",
             "durationMs",
-            "interrupted",
+            "recoveredAfterRestart",
             "audioFile",
             "audioFileBytes",
             "transcriptionStatus",
@@ -1525,9 +1525,6 @@
                   "null"
                 ]
               },
-              "interrupted": {
-                "type": "boolean"
-              },
               "participantCount": {
                 "maximum": 9007199254740991,
                 "minimum": -9007199254740991,
@@ -1545,6 +1542,9 @@
               },
               "recordingID": {
                 "type": "string"
+              },
+              "recoveredAfterRestart": {
+                "type": "boolean"
               },
               "startedAt": {
                 "type": "string"
@@ -1593,7 +1593,7 @@
               "startedAt",
               "endedAt",
               "durationMs",
-              "interrupted",
+              "recoveredAfterRestart",
               "audioFile",
               "audioFileBytes",
               "transcriptionStatus",
@@ -1689,7 +1689,7 @@
         "type": "number"
       },
       "schemaVersion": {
-        "const": 2,
+        "const": 3,
         "type": "number"
       },
       "version": {

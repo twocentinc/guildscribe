@@ -24,19 +24,14 @@ const addPCMInterval = async (active, intervalID, bytes) => {
     Buffer.alloc(bytes, 1),
   );
   await saveInterval(active.location, {
-    version: 1,
+    schemaVersion: 1,
     intervalID,
     recordingID: active.manifest.recordingID,
     kind: "speaking",
     userID: "333333333333333333",
-    username: "speaker",
-    displayName: "Speaker",
     startOffsetMs: 0,
     endOffsetMs: 100,
     incomplete: false,
-    reason: null,
-    pcmFile,
-    updatedAt: active.manifest.startedAt,
   });
 };
 
@@ -55,17 +50,14 @@ const createInventory = async () => {
     "222222222222222222",
     new Date("2026-11-05T12:00:00.000Z"),
   );
-  await addPCMInterval(
-    published,
-    "66666666-6666-4666-8666-666666666666",
-    100,
+  await addPCMInterval(published, "66666666-6666-4666-8666-666666666666", 100);
+  await writeFile(
+    path.join(published.location.directory, "audio.mp3"),
+    Buffer.alloc(50),
   );
-  await writeFile(path.join(published.location.directory, "audio.mp3"), Buffer.alloc(50));
   published.manifest.status = "complete";
   published.manifest.endedAt = "2026-11-05T12:01:00.000Z";
   published.manifest.durationMs = 60_000;
-  published.manifest.audioFile = "audio.mp3";
-  published.manifest.intervalCount = 1;
   await saveManifest(published.location, published.manifest);
   const publishedLocation = await publishRecording(
     paths,
@@ -79,11 +71,7 @@ const createInventory = async () => {
     "444444444444444444",
     new Date("2026-11-06T12:00:00.000Z"),
   );
-  await addPCMInterval(
-    inProgress,
-    "77777777-7777-4777-8777-777777777777",
-    25,
-  );
+  await addPCMInterval(inProgress, "77777777-7777-4777-8777-777777777777", 25);
 
   return { home, inProgress, paths, published, publishedLocation };
 };
@@ -103,7 +91,10 @@ test("recording inventory reports audio, PCM, and aggregate byte usage", async (
     assert.equal(result.recordings[0].audioFileBytes, 0);
 
     const completed = result.recordings[1];
-    assert.equal(completed.recordingID, inventory.published.manifest.recordingID);
+    assert.equal(
+      completed.recordingID,
+      inventory.published.manifest.recordingID,
+    );
     assert.equal(completed.storage, "published");
     assert.equal(completed.pcmFileCount, 1);
     assert.equal(completed.pcmFileBytes, 100);

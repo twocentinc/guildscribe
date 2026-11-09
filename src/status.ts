@@ -175,11 +175,6 @@ export const getRuntimeStatus = async (paths: GuildscribePaths) => {
   const startedAt = lock && lock.startedAt !== new Date(0).toISOString()
     ? lock.startedAt
     : null;
-  const graceEndsAt = recording?.emptySince
-    ? new Date(
-        Date.parse(recording.emptySince) + config.emptyGraceMs,
-      ).toISOString()
-    : null;
   const latest = inventory.recordings.find(
     (candidate) => candidate.storage === "published",
   );
@@ -225,11 +220,6 @@ export const getRuntimeStatus = async (paths: GuildscribePaths) => {
             0,
             now.getTime() - Date.parse(recording.startedAt),
           ),
-          emptySince: recording.emptySince,
-          graceEndsAt,
-          graceRemainingMs: graceEndsAt
-            ? Math.max(0, Date.parse(graceEndsAt) - now.getTime())
-            : null,
         }
       : null,
     latestRecording: latest ?? null,

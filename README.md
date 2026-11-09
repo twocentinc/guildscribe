@@ -104,8 +104,8 @@ request:
 
 After publication, Guildscribe invokes the hook outside the capture loop with
 the recording directory as its only argument. The hook atomically writes the
-complete result to `.transcript.json.pending`; Guildscribe validates it with
-Zod and publishes it as `transcript.json`. See
+complete result to `.transcript-result.json.pending`; Guildscribe validates it,
+embeds it in `transcript.json`, and derives `transcript.txt`. See
 [the specification](docs/spec.md#transcription-hook) for the exact contract.
 
 The default runtime home is `~/.guildscribe`. Use `--home <absolute-path>` for

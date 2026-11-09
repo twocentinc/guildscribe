@@ -26,6 +26,7 @@ import { GuildscribeError, sanitizeError } from "./protocol.js";
 import {
   readTranscript,
   readTranscriptionState,
+  renderTranscriptText,
 } from "./transcription.js";
 
 export interface VerificationCheck {
@@ -104,40 +105,19 @@ export const verifyRecording = async (
       : "One or more interval sidecars is unreadable",
     { discovered: names.length, readable: intervals.length },
   );
-  add(
-    "intervals.count",
-    manifest.intervalCount === intervals.length ? "pass" : "fail",
-    manifest.intervalCount === intervals.length
-      ? "Manifest interval count matches sidecars"
-      : "Manifest interval count does not match sidecars",
-    { manifest: manifest.intervalCount, sidecars: intervals.length },
-  );
-
   for (const interval of intervals) {
     if (interval.kind === "connectionGap") {
       add(
         `interval.${interval.intervalID}`,
-        interval.pcmFile === null ? "pass" : "fail",
-        interval.pcmFile === null
-          ? "Connection gap has no PCM payload"
-          : "Connection gap unexpectedly references PCM",
+        "pass",
+        "Connection gap timing is readable",
       );
       continue;
     }
-    const pcmPath = interval.pcmFile
-      ? path.join(
-          discovered.location.intervalsDirectory,
-          path.basename(interval.pcmFile),
-        )
-      : null;
-    if (!pcmPath) {
-      add(
-        `interval.${interval.intervalID}`,
-        "fail",
-        "Speaking interval has no PCM filename",
-      );
-      continue;
-    }
+    const pcmPath = path.join(
+      discovered.location.intervalsDirectory,
+      `${interval.intervalID}.pcm`,
+    );
     try {
       const info = await stat(pcmPath);
       const frameBytes = PCM_FORMAT.channels * 2;
@@ -165,11 +145,8 @@ export const verifyRecording = async (
     }
   }
 
-  if (manifest.audioFile) {
-    const audioPath = path.join(
-      discovered.location.directory,
-      path.basename(manifest.audioFile),
-    );
+  if (manifest.status === "complete") {
+    const audioPath = path.join(discovered.location.directory, "audio.mp3");
     try {
       const durationSeconds = await validateMP3(audioPath);
       add("audio.mp3", "pass", "FFprobe validated the combined MP3", {
@@ -183,8 +160,8 @@ export const verifyRecording = async (
   } else {
     add(
       "audio.mp3",
-      manifest.status === "complete" ? "fail" : "warn",
-      "Manifest does not reference combined audio",
+      "warn",
+      "Recording is not complete, so combined audio is not required",
     );
   }
 
@@ -218,7 +195,8 @@ export const verifyRecording = async (
       const document = await readTranscript(discovered.location);
       const readableText = await readFile(transcriptText, "utf8");
       const valid =
-        readableText === `${document.text.replace(/\s+$/, "")}\n`;
+        document.result !== null &&
+        readableText === renderTranscriptText(document.result);
       add(
         "transcription",
         valid ? "pass" : "fail",
@@ -302,6 +280,8 @@ export const exportRecording = async (
   const sourceFiles = (await collectRecordingFiles(discovered.location.directory))
     .filter(
       ({ relativePath }) =>
+        relativePath !== ".transcript-result.json.pending" &&
+        !relativePath.startsWith(".transcript-result.json.pending.") &&
         relativePath !== ".transcript.json.pending" &&
         !relativePath.startsWith(".transcript.json.pending."),
     )

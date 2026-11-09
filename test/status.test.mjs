@@ -4,10 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import {
-  getPaths,
-  initializeHome,
-} from "../dist/config.js";
+import { getPaths, initializeHome } from "../dist/config.js";
 import { createRecording, saveManifest } from "../dist/recording.js";
 import {
   classifyDaemonHealth,
@@ -17,7 +14,7 @@ import {
   writeDaemonRuntimeState,
 } from "../dist/status.js";
 
-test("runtime status reports daemon, active recording, grace, and storage", async () => {
+test("runtime status reports daemon, active recording, and storage", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "guildscribe-status-"));
   const paths = getPaths(path.join(root, "home"));
   try {
@@ -38,7 +35,6 @@ test("runtime status reports daemon, active recording, grace, and storage", asyn
       startedAt,
       { guildName: "Guild", channelName: "Meeting" },
     );
-    active.manifest.emptySince = new Date(Date.now() - 1_000).toISOString();
     await saveManifest(active.location, active.manifest);
     await mkdir(path.dirname(paths.lock), { recursive: true });
     await writeFile(
@@ -67,7 +63,7 @@ test("runtime status reports daemon, active recording, grace, and storage", asyn
     assert.equal(result.recording.recordingID, active.manifest.recordingID);
     assert.equal(result.recording.guildName, "Guild");
     assert.equal(result.recording.channelName, "Meeting");
-    assert.ok(result.recording.graceRemainingMs > 0);
+    assert.equal("graceRemainingMs" in result.recording, false);
     assert.equal(result.storage.recordingCount, 1);
     assert.equal(result.latestRecording, null);
     assert.doesNotMatch(JSON.stringify(result), /secret-token/);

@@ -314,7 +314,7 @@ test("simultaneous Discord Opus streams produce separate PCM and a final MP3", a
     );
     assert.deepEqual([...intervalsByUser.keys()].sort(), [USER_A, USER_B]);
     const pcmPaths = intervals.map((interval) =>
-      path.join(intervalDirectory, interval.pcmFile),
+      path.join(intervalDirectory, `${interval.intervalID}.pcm`),
     );
     const [decodedA, decodedB] = await Promise.all(
       pcmPaths.map((pcmPath) => readFile(pcmPath)),
@@ -355,7 +355,7 @@ test("simultaneous Discord Opus streams produce separate PCM and a final MP3", a
     assert.equal(complete.channelID, CHANNEL_A);
     assert.equal(complete.channelName, `channel-${CHANNEL_A}`);
     assert.equal(complete.guildName, "Test Guild");
-    assert.equal(complete.intervalCount, 2);
+    assert.equal(complete.schemaVersion, 1);
     const participants = JSON.parse(
       await readFile(path.join(published, "participants.json"), "utf8"),
     );
@@ -366,16 +366,16 @@ test("simultaneous Discord Opus streams produce separate PCM and a final MP3", a
     );
     assert.ok(
       participants.participants.every(
-        ({ sessions, speakingDurationMs }) =>
-          sessions.length === 1 &&
-          sessions[0].leftAt !== null &&
-          speakingDurationMs === 100,
+        ({ sessions }) =>
+          sessions.length === 1 && sessions[0].endOffsetMs !== null,
       ),
     );
     assert.ok((await stat(path.join(published, "audio.mp3"))).size > 0);
     const publishedPCM = await Promise.all(
       intervals.map((interval) =>
-        readFile(path.join(published, "intervals", interval.pcmFile)),
+        readFile(
+          path.join(published, "intervals", `${interval.intervalID}.pcm`),
+        ),
       ),
     );
     assert.equal(publishedPCM[0].length, pcmA.length);
