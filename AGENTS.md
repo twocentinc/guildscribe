@@ -13,6 +13,7 @@ Saratonin so it can be published and installed on its own.
 
 ## Scope
 
+- Guildscribe also sends channel messages and embeds and dispatches explicitly configured slash commands to executable hooks. Only slash commands may trigger these user actions; ordinary messages and context-menu interactions must never execute hooks.
 - Guildscribe is a Discord meeting recorder with optional local transcription
   supplied through one dedicated executable hook. Nightcrew integration, when
   desired, belongs in an external hook adapter rather than Guildscribe.
@@ -57,7 +58,7 @@ Saratonin so it can be published and installed on its own.
 
 - Use dmbridge as the command-line design reference without copying its
   provider-specific concepts.
-- Treat `src/commands.ts` as the canonical public command catalog and
+- Treat `src/commands.ts` as the canonical public command catalog, option registration, and dispatch owner and
   `src/protocol.ts` as the canonical owner of JSON schemas, envelopes, error
   semantics, exit classes, and contract versions. Do not maintain competing
   command or schema inventories in documentation.

@@ -1,3 +1,4 @@
+import { installSlashCommands } from "./discordActions.js";
 import { discordIntents, MessageLogger } from "./messages.js";
 import { mkdir, open, readFile, unlink } from "node:fs/promises";
 
@@ -86,6 +87,7 @@ export const runDaemon = async (
     intents: discordIntents(config.messageChannelIDs),
     partials: [Partials.Message],
   });
+  installSlashCommands(client, paths, config);
   const messages = new MessageLogger(
     paths.home,
     config.messageChannelIDs ?? [],

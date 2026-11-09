@@ -137,7 +137,7 @@ portable export. This keeps the complete recording lifecycle readable in one
 place without mixing FFmpeg or export mechanics into it.
 
 `src/commands.ts` is the runtime source of truth for public commands,
-descriptions, mutation classification, and request/result schema associations.
+descriptions, options, dispatch, mutation classification, and request/result schema associations.
 `src/protocol.ts` owns request schemas, JSON envelopes, retry safety, exit
 classes, diagnostics, schema export, and package-version discovery. Reviewed
 snapshots freeze the public catalog and schemas. `guildscribe help [scope...]`
@@ -1075,3 +1075,123 @@ No reasoning stage follows transcription.
 - SQLite metadata/text and file-backed capture detail remain standalone.
 - Message edits update FTS without duplicating message rows.
 - Migration is backed up, idempotent, and resumable across cleanup interruption.
+
+## Channel messages and slash-command hooks
+
+The CLI can send text and rich embeds to a channel accessible to the bot, independently
+of the recording and message-history allowlists. Discord enforces channel access and
+Send Messages / Embed Links permissions. Mentions are disabled. Structured input is
+read from a file or stdin; dry-run validates locally without contacting Discord.
+
+Example request for `guildscribe messages send --request message.json`:
+
+```json
+{
+  "channelID": "123456789012345678",
+  "message": {
+    "content": "Meeting notes",
+    "embeds": [
+      { "title": "Summary", "description": "Notes are ready", "color": 5793266 }
+    ]
+  }
+}
+```
+
+Configure `slashCommands` through `config update --request`, stored as JSON in
+`GUILDSCRIBE_SLASH_COMMANDS` inside the owner-only `.env`. Each entry has a name,
+description, guildID, absolute executable path, nonempty allowedUserIDs, optional
+channelIDs, optional ephemeral (default true), and options (default empty).
+Options have name, description, type, and optional required. Types are string,
+integer, number, boolean, user, channel, and role. Names use lowercase ASCII letters,
+digits, underscores, and hyphens. Example configuration update:
+
+```json
+{
+  "slashCommands": [
+    {
+      "name": "status",
+      "description": "Check our service",
+      "guildID": "123456789012345678",
+      "executable": "/absolute/path/to/status-hook",
+      "allowedUserIDs": ["234567890123456789"],
+      "options": [
+        {
+          "name": "service",
+          "description": "Service name",
+          "type": "string",
+          "required": true
+        }
+      ]
+    }
+  ]
+}
+```
+
+Run `guildscribe commands sync --dry-run`, then `guildscribe commands sync` to
+upsert the configured guild slash commands. This does not remove unrelated or
+previously registered commands. Removed configuration entries cannot execute hooks;
+remove their stale Discord registrations in Discord's application management.
+Commands default to disabled for ordinary members; administrators must grant access
+in Discord's integration settings as well as configuring Guildscribe's runtime
+user allowlist. Restart the daemon after configuration changes. Registration does
+not happen implicitly on daemon startup.
+
+The daemon accepts only chat-input slash interactions matching configured guilds
+and commands. It checks the user and optional channel restrictions, acknowledges
+before executing, and allows only one action hook at a time. Hook timeout is the
+configured hookTimeoutMs capped at two minutes. No automatic hook retries occur.
+Lifecycle and transcription hooks retain their independent existing behavior.
+
+The executable runs directly without shell arguments, in the runtime home, with a
+minimal environment excluding Discord credentials. Stdin contains one JSON object:
+version 1, event `command.invoked`, interactionID, commandName, guildID, channelID,
+userID, and an options object containing typed primitive values or null for omitted
+options. User/channel/role values are Discord IDs. Interaction tokens are excluded.
+Stdout must be one JSON message object containing content and/or embeds, identical
+to the send request's message field. Output is limited to 64 KB. Stderr is drained
+and not published. Errors produce a generic response; timed-out actions may have
+already taken effect and must be checked before retrying. No action is triggered
+from messages, buttons, context menus, or unconfigured command names.
+
+The initial messaging slice advanced the CLI schema to 7 and package to 1.3.0. No new runtime
+dependency or database migration is required. Runtime schemas and the command
+catalog remain canonical for all field and command details.
+
+## CLI consistency and capability discovery (1.4.0)
+
+`src/commands.ts` now owns command metadata, Commander option registration,
+dispatch, and generated discovery. `src/cli.ts` preserves its entry-point export.
+Help and contract snapshots derive command-specific flags, required-option state,
+defaults, choices, and global flags from the runtime registrations. CLI schema 8
+adds these fields, mutation previews, and capability results; previous snapshots
+remain immutable.
+
+Message dry runs return the exact proposed Discord payload, including disabled
+mentions. Command-sync dry runs return sorted guild registration definitions,
+including typed options and default permissions. Dry runs do not contact Discord.
+The same payload builders drive real operations.
+
+`guildscribe capabilities` checks local hook executability and reports supported
+operations, configured command restrictions, and unknown remote registration state.
+Add `--live` for read-only registration checks; add `--channel <ID>` to inspect that
+channel's permissions. Text and announcement channel checks combine guild roles,
+everyone/role/member overwrites, administrator bypass, and communication timeout.
+Thread and other channel types remain explicitly unknown. Registration status is
+matching, different, missing, or unknown; executable and registration checks do not
+prove the daemon is online or Discord's integration permissions admit a given user.
+No capability check executes a hook, sends a message, or changes registration.
+
+The message, sync, and capability transports use the command's abort signal across
+all requests. The finite-command deadline aborts in-flight requests and prevents
+later sync requests from being sent. There are no automatic HTTP retries. Aborting
+cannot undo an effect already accepted by Discord. HTTP failures expose status and
+Retry-After, and failures distinguish timeouts from transport errors without echoing
+provider response bodies or credentials. Mutations conservatively report unsafe
+retry behavior and outcomeUnknown. Sync transport failures include completedCommands
+when available; the outer CLI deadline can instead report a whole-command unknown
+outcome. A failed sync can have already registered earlier commands.
+
+Offline tests verify exact send and registration requests, partial sync failures,
+rate-limit and permission failures, cancellation, permission overwrites, registration
+drift, dry-run isolation, and acknowledgement-before-hook-response ordering. No live
+mutations are part of verification.

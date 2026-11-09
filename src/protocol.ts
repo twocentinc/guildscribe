@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1;
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 8;
 
 export const EXIT_CODES = {
   success: 0,
@@ -91,12 +91,124 @@ const executablePathSchema = z
   .refine(path.isAbsolute, "Hook path must be absolute");
 const nullableExecutablePathSchema = executablePathSchema.nullable();
 
+export const embedSchema = z
+  .object({
+    title: z.string().max(256).optional(),
+    description: z.string().max(4096).optional(),
+    url: z.url().optional(),
+    color: z.number().int().min(0).max(16777215).optional(),
+    timestamp: z.iso.datetime().optional(),
+    fields: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1).max(256),
+            value: z.string().min(1).max(1024),
+            inline: z.boolean().optional(),
+          })
+          .strict(),
+      )
+      .max(25)
+      .optional(),
+    footer: z
+      .object({ text: z.string().max(2048), icon_url: z.url().optional() })
+      .strict()
+      .optional(),
+    author: z
+      .object({
+        name: z.string().max(256),
+        url: z.url().optional(),
+        icon_url: z.url().optional(),
+      })
+      .strict()
+      .optional(),
+    image: z.object({ url: z.url() }).strict().optional(),
+    thumbnail: z.object({ url: z.url() }).strict().optional(),
+  })
+  .strict();
+export const messageBodySchema = z
+  .object({
+    content: z.string().min(1).max(2000).optional(),
+    embeds: z.array(embedSchema).min(1).max(10).optional(),
+  })
+  .strict()
+  .refine((v) => !!v.content || !!v.embeds?.length, "Text or embeds required")
+  .refine(
+    (v) =>
+      (v.embeds ?? []).reduce(
+        (n, e) =>
+          n +
+          (e.title?.length ?? 0) +
+          (e.description?.length ?? 0) +
+          (e.footer?.text.length ?? 0) +
+          (e.author?.name.length ?? 0) +
+          (e.fields ?? []).reduce(
+            (a, f) => a + f.name.length + f.value.length,
+            0,
+          ),
+        0,
+      ) <= 6000,
+    "Embed text exceeds 6000 characters",
+  );
+export const messageSendRequestSchema = z
+  .object({ channelID: discordIDSchema, message: messageBodySchema })
+  .strict();
+const slashName = z.string().regex(/^[a-z0-9_-]{1,32}$/);
+export const slashCommandsSchema = z
+  .array(
+    z
+      .object({
+        name: slashName,
+        description: z.string().min(1).max(100),
+        guildID: discordIDSchema,
+        executable: executablePathSchema,
+        allowedUserIDs: z.array(discordIDSchema).min(1),
+        channelIDs: z.array(discordIDSchema).min(1).optional(),
+        ephemeral: z.boolean().default(true),
+        options: z
+          .array(
+            z
+              .object({
+                name: slashName,
+                description: z.string().min(1).max(100),
+                type: z.enum([
+                  "string",
+                  "integer",
+                  "number",
+                  "boolean",
+                  "user",
+                  "channel",
+                  "role",
+                ]),
+                required: z.boolean().optional(),
+              })
+              .strict(),
+          )
+          .max(25)
+          .default([]),
+      })
+      .strict(),
+  )
+  .max(100)
+  .refine(
+    (v) => new Set(v.map((c) => c.guildID + ":" + c.name)).size === v.length,
+    "Duplicate slash command",
+  )
+  .refine(
+    (v) =>
+      v.every(
+        (c) => new Set(c.options.map((o) => o.name)).size === c.options.length,
+      ),
+    "Duplicate option",
+  );
+
 export const initRequestSchema = z
   .object({
     discordToken: z.string().trim().min(1),
     ownerUserID: discordIDSchema.optional(),
     voiceChannelIDs: voiceChannelIDsSchema,
     messageChannelIDs: messageChannelIDsSchema.optional(),
+    slashCommands: slashCommandsSchema.optional(),
     emptyGraceMs: z.number().int().min(0).max(3_600_000).optional(),
     hookTimeoutMs: z.number().int().min(1).max(3_600_000).optional(),
     transcriptionHook: executablePathSchema.optional(),
@@ -123,6 +235,7 @@ export const configUpdateRequestSchema = z
     ownerUserID: discordIDSchema.nullable().optional(),
     voiceChannelIDs: voiceChannelIDsSchema.optional(),
     messageChannelIDs: messageChannelIDsSchema.optional(),
+    slashCommands: slashCommandsSchema.optional(),
     emptyGraceMs: z.number().int().min(0).max(3_600_000).optional(),
     hookTimeoutMs: z.number().int().min(1).max(3_600_000).optional(),
     transcriptionHook: nullableExecutablePathSchema.optional(),
@@ -153,6 +266,15 @@ const commandDefinitionSchema = z.object({
   mutation: z.boolean(),
   requestSchema: z.string().nullable(),
   resultSchema: z.string(),
+  options: z.array(
+    z.object({
+      flags: z.string(),
+      description: z.string(),
+      required: z.boolean(),
+      defaultValue: z.unknown(),
+      choices: z.array(z.string()).nullable(),
+    }),
+  ),
 });
 const helpResultSchema = z.object({
   scope: z.array(z.string()),
@@ -181,6 +303,7 @@ const configurationSchema = z.object({
   discordToken: z.literal("[redacted]"),
   ownerUserID: discordIDSchema.nullable(),
   messageChannelIDs: z.array(discordIDSchema),
+  slashCommands: slashCommandsSchema.optional(),
   voiceChannelIDs: z.array(discordIDSchema),
   emptyGraceMs: z.number().int(),
   hookTimeoutMs: z.number().int(),
@@ -327,6 +450,7 @@ const initResultSchema = z.object({
   discordToken: z.literal("[redacted]"),
   ownerUserID: discordIDSchema.nullable(),
   messageChannelIDs: z.array(discordIDSchema),
+  slashCommands: slashCommandsSchema.optional(),
   voiceChannelIDs: z.array(discordIDSchema),
 });
 const envelopeSuccessSchema = z.object({
@@ -431,6 +555,73 @@ const databaseVerifyResultSchema = z.object({
 });
 
 export const schemas = {
+  "capabilities.result": z.object({
+    live: z.boolean(),
+    operations: z.object({
+      sendMessages: z.boolean(),
+      embeds: z.boolean(),
+      slashHooks: z.boolean(),
+    }),
+    channel: z
+      .object({
+        channelID: discordIDSchema,
+        sendMessages: z.boolean().nullable(),
+        embedLinks: z.boolean().nullable(),
+      })
+      .nullable(),
+    commands: z.array(
+      z.object({
+        guildID: discordIDSchema,
+        name: z.string(),
+        executableReady: z.boolean(),
+        registration: z.enum(["unknown", "matching", "missing", "different"]),
+        allowedUserIDs: z.array(discordIDSchema),
+        channelIDs: z.array(discordIDSchema),
+        ephemeral: z.boolean(),
+      }),
+    ),
+    limitations: z.array(z.string()),
+  }),
+  "messages.send.request": messageSendRequestSchema,
+  "messages.send.result": z
+    .object({
+      dryRun: z.boolean(),
+      channelID: discordIDSchema,
+      messageID: discordIDSchema.nullable(),
+      operation: z.literal("messages.send"),
+      payload: messageBodySchema.safeExtend({
+        allowed_mentions: z.object({ parse: z.array(z.string()).max(0) }),
+      }),
+    })
+    .strict(),
+  "commands.sync.result": z
+    .object({
+      dryRun: z.boolean(),
+      commands: z.array(z.string()),
+      operation: z.literal("commands.sync"),
+      registrations: z.array(
+        z.object({
+          guildID: discordIDSchema,
+          definition: z.object({
+            name: z.string(),
+            description: z.string(),
+            type: z.literal(1),
+            default_member_permissions: z.literal("0"),
+            options: z.array(
+              z.object({
+                name: z.string(),
+                description: z.string(),
+                required: z.boolean(),
+                type: z.number().int(),
+              }),
+            ),
+          }),
+        }),
+      ),
+    })
+    .strict(),
+  "slash.commands": slashCommandsSchema,
+  "slash.response": messageBodySchema,
   "messages.get.result": messageResultSchema,
   "messages.page.result": page(messageResultSchema),
   "transcript.get.result": transcriptMetadataSchema.extend({

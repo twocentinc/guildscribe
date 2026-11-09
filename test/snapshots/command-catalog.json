@@ -1,12 +1,128 @@
 {
   "commands": [
     {
+      "key": "capabilities",
+      "path": "capabilities",
+      "description": "inspect local readiness and optional live Discord permissions",
+      "mutation": false,
+      "requestSchema": null,
+      "resultSchema": "capabilities.result",
+      "options": [
+        {
+          "flags": "--live",
+          "description": "check Discord without mutations",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--channel <ID>",
+          "description": "channel permission scope",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
+    },
+    {
+      "key": "messages send",
+      "path": "messages send",
+      "description": "send text or embeds to a Discord channel",
+      "mutation": true,
+      "requestSchema": "messages.send.request",
+      "resultSchema": "messages.send.result",
+      "options": [
+        {
+          "flags": "--request <file-or-dash>",
+          "description": "JSON request file or stdin",
+          "required": true,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--dry-run",
+          "description": "validate without sending",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
+    },
+    {
+      "key": "commands sync",
+      "path": "commands sync",
+      "description": "register configured guild slash commands",
+      "mutation": true,
+      "requestSchema": null,
+      "resultSchema": "commands.sync.result",
+      "options": [
+        {
+          "flags": "--dry-run",
+          "description": "preview registration",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
+    },
+    {
       "key": "messages list",
       "path": "messages list",
       "description": "browse stored messages",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "messages.page.result"
+      "resultSchema": "messages.page.result",
+      "options": [
+        {
+          "flags": "--channel <ID>",
+          "description": "channel ID",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--after <timestamp>",
+          "description": "inclusive ISO timestamp",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--before <timestamp>",
+          "description": "exclusive ISO timestamp",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--limit <count>",
+          "description": "page size from 1 to 200",
+          "required": false,
+          "defaultValue": "50",
+          "choices": null
+        },
+        {
+          "flags": "--cursor <cursor>",
+          "description": "next page cursor",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--author <ID>",
+          "description": "author ID",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--include-threads",
+          "description": "include child threads of the selected channel",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
     },
     {
       "key": "messages get",
@@ -14,7 +130,8 @@
       "description": "read one stored message",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "messages.get.result"
+      "resultSchema": "messages.get.result",
+      "options": []
     },
     {
       "key": "messages search",
@@ -22,7 +139,58 @@
       "description": "search message text",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "messages.page.result"
+      "resultSchema": "messages.page.result",
+      "options": [
+        {
+          "flags": "--channel <ID>",
+          "description": "channel ID",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--after <timestamp>",
+          "description": "inclusive ISO timestamp",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--before <timestamp>",
+          "description": "exclusive ISO timestamp",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--limit <count>",
+          "description": "page size from 1 to 200",
+          "required": false,
+          "defaultValue": "50",
+          "choices": null
+        },
+        {
+          "flags": "--cursor <cursor>",
+          "description": "next page cursor",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--author <ID>",
+          "description": "author ID",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--include-threads",
+          "description": "include child threads of the selected channel",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
     },
     {
       "key": "transcript get",
@@ -30,7 +198,30 @@
       "description": "read transcript metadata and optional segments",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "transcript.get.result"
+      "resultSchema": "transcript.get.result",
+      "options": [
+        {
+          "flags": "--include-segments",
+          "description": "include a page of transcript segments",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--limit <count>",
+          "description": "segment page size from 1 to 200",
+          "required": false,
+          "defaultValue": "50",
+          "choices": null
+        },
+        {
+          "flags": "--cursor <cursor>",
+          "description": "next segment page",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
     },
     {
       "key": "transcript search",
@@ -38,7 +229,51 @@
       "description": "search spoken text",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "transcript.search.result"
+      "resultSchema": "transcript.search.result",
+      "options": [
+        {
+          "flags": "--channel <ID>",
+          "description": "channel ID",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--after <timestamp>",
+          "description": "inclusive ISO timestamp",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--before <timestamp>",
+          "description": "exclusive ISO timestamp",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--limit <count>",
+          "description": "page size from 1 to 200",
+          "required": false,
+          "defaultValue": "50",
+          "choices": null
+        },
+        {
+          "flags": "--cursor <cursor>",
+          "description": "next page cursor",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--speaker <ID>",
+          "description": "speaker Discord user ID",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
     },
     {
       "key": "transcript export",
@@ -46,7 +281,35 @@
       "description": "export transcript text, JSON, or subtitles",
       "mutation": true,
       "requestSchema": null,
-      "resultSchema": "transcript.export.result"
+      "resultSchema": "transcript.export.result",
+      "options": [
+        {
+          "flags": "--destination <absolute-path>",
+          "description": "new export file",
+          "required": true,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--format <format>",
+          "description": "export format",
+          "required": false,
+          "defaultValue": "txt",
+          "choices": [
+            "txt",
+            "json",
+            "srt",
+            "vtt"
+          ]
+        },
+        {
+          "flags": "--dry-run",
+          "description": "preview without writing",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
     },
     {
       "key": "transcript retry",
@@ -54,7 +317,23 @@
       "description": "queue an explicit retry of failed transcription",
       "mutation": true,
       "requestSchema": "transcript.retry.request",
-      "resultSchema": "transcript.retry.result"
+      "resultSchema": "transcript.retry.result",
+      "options": [
+        {
+          "flags": "--request <file-or-dash>",
+          "description": "JSON request file or stdin",
+          "required": true,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--dry-run",
+          "description": "preview without queuing",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
     },
     {
       "key": "database status",
@@ -62,7 +341,8 @@
       "description": "show database version, size, and counts",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "database.status.result"
+      "resultSchema": "database.status.result",
+      "options": []
     },
     {
       "key": "database verify",
@@ -70,7 +350,8 @@
       "description": "check database and search index integrity",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "database.verify.result"
+      "resultSchema": "database.verify.result",
+      "options": []
     },
     {
       "key": "database backup",
@@ -78,7 +359,23 @@
       "description": "create a consistent database backup",
       "mutation": true,
       "requestSchema": null,
-      "resultSchema": "database.backup.result"
+      "resultSchema": "database.backup.result",
+      "options": [
+        {
+          "flags": "--destination <absolute-path>",
+          "description": "new SQLite backup file",
+          "required": true,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--dry-run",
+          "description": "preview without writing",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
     },
     {
       "key": "help",
@@ -86,7 +383,8 @@
       "description": "list commands and their machine-readable contracts",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "help.result"
+      "resultSchema": "help.result",
+      "options": []
     },
     {
       "key": "version",
@@ -94,7 +392,8 @@
       "description": "print version and protocol information",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "version.result"
+      "resultSchema": "version.result",
+      "options": []
     },
     {
       "key": "init",
@@ -102,7 +401,23 @@
       "description": "create a new Guildscribe runtime home",
       "mutation": true,
       "requestSchema": "init.request",
-      "resultSchema": "init.result"
+      "resultSchema": "init.result",
+      "options": [
+        {
+          "flags": "--request <file-or-dash>",
+          "description": "JSON request file or - for stdin",
+          "required": true,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--dry-run",
+          "description": "validate without writing",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
     },
     {
       "key": "doctor",
@@ -110,7 +425,16 @@
       "description": "validate local tools, configuration, Discord, and contracts",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "doctor.result"
+      "resultSchema": "doctor.result",
+      "options": [
+        {
+          "flags": "--schema <name>",
+          "description": "include one published JSON schema",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
     },
     {
       "key": "status",
@@ -118,7 +442,8 @@
       "description": "show daemon, recording, and storage status",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "status.result"
+      "resultSchema": "status.result",
+      "options": []
     },
     {
       "key": "config show",
@@ -126,7 +451,8 @@
       "description": "show configuration with the Discord token redacted",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "configuration.result"
+      "resultSchema": "configuration.result",
+      "options": []
     },
     {
       "key": "config update",
@@ -134,7 +460,23 @@
       "description": "atomically update configuration",
       "mutation": true,
       "requestSchema": "config.update.request",
-      "resultSchema": "config.update.result"
+      "resultSchema": "config.update.result",
+      "options": [
+        {
+          "flags": "--request <file-or-dash>",
+          "description": "JSON request file or - for stdin",
+          "required": true,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--dry-run",
+          "description": "validate and preview without writing",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
     },
     {
       "key": "recordings list",
@@ -142,7 +484,8 @@
       "description": "list published and in-progress recordings",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "recordings.list.result"
+      "resultSchema": "recordings.list.result",
+      "options": []
     },
     {
       "key": "recordings show",
@@ -150,7 +493,8 @@
       "description": "show one recording and its artifact sizes",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "recording.summary"
+      "resultSchema": "recording.summary",
+      "options": []
     },
     {
       "key": "recordings verify",
@@ -158,7 +502,8 @@
       "description": "validate recording artifacts and calculate checksums",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "recording.verify.result"
+      "resultSchema": "recording.verify.result",
+      "options": []
     },
     {
       "key": "recordings export",
@@ -166,7 +511,30 @@
       "description": "copy a recording into a portable checksummed directory",
       "mutation": true,
       "requestSchema": null,
-      "resultSchema": "recording.export.result"
+      "resultSchema": "recording.export.result",
+      "options": [
+        {
+          "flags": "--destination <absolute-path>",
+          "description": "new export directory",
+          "required": true,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--wav",
+          "description": "also render a PCM WAV copy with FFmpeg",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        },
+        {
+          "flags": "--dry-run",
+          "description": "show the export plan without writing",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
     },
     {
       "key": "daemon run",
@@ -174,7 +542,8 @@
       "description": "run the recorder in the foreground",
       "mutation": true,
       "requestSchema": null,
-      "resultSchema": "result.any"
+      "resultSchema": "result.any",
+      "options": []
     },
     {
       "key": "startup install",
@@ -182,7 +551,16 @@
       "description": "install and load the per-user macOS LaunchAgent",
       "mutation": true,
       "requestSchema": null,
-      "resultSchema": "startup.install.result"
+      "resultSchema": "startup.install.result",
+      "options": [
+        {
+          "flags": "--dry-run",
+          "description": "render the LaunchAgent without installing it",
+          "required": false,
+          "defaultValue": null,
+          "choices": null
+        }
+      ]
     },
     {
       "key": "startup uninstall",
@@ -190,7 +568,8 @@
       "description": "unload the LaunchAgent and remove its plist",
       "mutation": true,
       "requestSchema": null,
-      "resultSchema": "startup.wrappedStatus.result"
+      "resultSchema": "startup.wrappedStatus.result",
+      "options": []
     },
     {
       "key": "startup status",
@@ -198,7 +577,8 @@
       "description": "show the LaunchAgent's installed and running state",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "startup.status.result"
+      "resultSchema": "startup.status.result",
+      "options": []
     },
     {
       "key": "startup start",
@@ -206,7 +586,8 @@
       "description": "start an installed LaunchAgent",
       "mutation": true,
       "requestSchema": null,
-      "resultSchema": "startup.status.result"
+      "resultSchema": "startup.status.result",
+      "options": []
     },
     {
       "key": "startup stop",
@@ -214,7 +595,8 @@
       "description": "gracefully stop the LaunchAgent until it is started again",
       "mutation": true,
       "requestSchema": null,
-      "resultSchema": "startup.status.result"
+      "resultSchema": "startup.status.result",
+      "options": []
     },
     {
       "key": "startup restart",
@@ -222,7 +604,8 @@
       "description": "gracefully stop and start the LaunchAgent",
       "mutation": true,
       "requestSchema": null,
-      "resultSchema": "startup.status.result"
+      "resultSchema": "startup.status.result",
+      "options": []
     },
     {
       "key": "startup logs",
@@ -230,10 +613,20 @@
       "description": "read recent daemon and LaunchAgent logs",
       "mutation": false,
       "requestSchema": null,
-      "resultSchema": "startup.logs.result"
+      "resultSchema": "startup.logs.result",
+      "options": [
+        {
+          "flags": "--lines <count>",
+          "description": "lines to return from each log",
+          "required": false,
+          "defaultValue": "100",
+          "choices": null
+        }
+      ]
     }
   ],
   "globalOptions": [
+    "-V, --version",
     "--home <absolute-path>",
     "--request-id <ID>",
     "--timeout <duration>",
@@ -241,6 +634,6 @@
     "--non-interactive",
     "--quiet",
     "--verbose",
-    "--verbosity <quiet|normal|verbose|debug>"
+    "--verbosity <level>"
   ]
 }

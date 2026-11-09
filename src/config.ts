@@ -25,6 +25,7 @@ import {
   type InitRequest,
   voiceChannelIDsSchema,
   messageChannelIDsSchema,
+  slashCommandsSchema,
 } from "./protocol.js";
 
 export interface GuildscribePaths {
@@ -55,6 +56,7 @@ export interface GuildscribeConfig {
   ownerUserID: string | undefined;
   voiceChannelIDs: string[];
   messageChannelIDs: string[];
+  slashCommands?: z.infer<typeof slashCommandsSchema>;
   emptyGraceMs: number;
   hookTimeoutMs: number;
   transcriptionHook: string | undefined;
@@ -66,6 +68,7 @@ const ENV_KEYS = {
   ownerUserID: "GUILDSCRIBE_OWNER_USER_ID",
   voiceChannelIDs: "GUILDSCRIBE_VOICE_CHANNEL_IDS",
   messageChannelIDs: "GUILDSCRIBE_MESSAGE_CHANNEL_IDS",
+  slashCommands: "GUILDSCRIBE_SLASH_COMMANDS",
   legacyVoiceChannelID: "GUILDSCRIBE_VOICE_CHANNEL_ID",
   emptyGraceMs: "GUILDSCRIBE_EMPTY_GRACE_MS",
   hookTimeoutMs: "GUILDSCRIBE_HOOK_TIMEOUT_MS",
@@ -174,6 +177,9 @@ const renderEnv = (request: InitRequest): string => {
     `${ENV_KEYS.emptyGraceMs}=${encodeValue(request.emptyGraceMs ?? 30_000)}`,
     `${ENV_KEYS.hookTimeoutMs}=${encodeValue(request.hookTimeoutMs ?? 30_000)}`,
   ];
+  lines.push(
+    `${ENV_KEYS.slashCommands}=${encodeValue(JSON.stringify(request.slashCommands ?? []))}`,
+  );
   if (request.ownerUserID) {
     lines.splice(
       1,
@@ -224,6 +230,7 @@ const renderEnv = (request: InitRequest): string => {
 export const redactedConfiguration = (config: GuildscribeConfig) => ({
   discordToken: "[redacted]",
   ownerUserID: config.ownerUserID ?? null,
+  slashCommands: config.slashCommands ?? [],
   voiceChannelIDs: config.voiceChannelIDs,
   messageChannelIDs: config.messageChannelIDs ?? [],
   emptyGraceMs: config.emptyGraceMs,
@@ -259,6 +266,7 @@ const mergedConfiguration = (
   return {
     discordToken: update.discordToken ?? config.discordToken,
     ...(ownerUserID ? { ownerUserID } : {}),
+    slashCommands: update.slashCommands ?? config.slashCommands ?? [],
     voiceChannelIDs: update.voiceChannelIDs ?? config.voiceChannelIDs,
     messageChannelIDs:
       update.messageChannelIDs ?? config.messageChannelIDs ?? [],
@@ -285,6 +293,7 @@ export const updateConfiguration = async (
   const preview = redactedConfiguration({
     discordToken: merged.discordToken,
     ownerUserID: merged.ownerUserID,
+    slashCommands: merged.slashCommands ?? [],
     voiceChannelIDs: merged.voiceChannelIDs,
     messageChannelIDs: merged.messageChannelIDs ?? [],
     emptyGraceMs: merged.emptyGraceMs ?? 30_000,
@@ -537,6 +546,9 @@ export const loadConfig = async (
   return {
     discordToken: token,
     ownerUserID: ownerUserIDResult?.data,
+    slashCommands: slashCommandsSchema.parse(
+      JSON.parse(values[ENV_KEYS.slashCommands] || "[]"),
+    ),
     voiceChannelIDs: channelResult.data,
     messageChannelIDs,
     emptyGraceMs: integerSetting(values, ENV_KEYS.emptyGraceMs, 30_000, 0),

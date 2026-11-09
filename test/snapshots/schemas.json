@@ -1,7 +1,237 @@
 {
   "protocolVersion": 1,
-  "schemaVersion": 6,
+  "schemaVersion": 8,
   "schemas": {
+    "capabilities.result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "channelID": {
+                  "pattern": "^\\d{15,22}$",
+                  "type": "string"
+                },
+                "embedLinks": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "sendMessages": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "channelID",
+                "sendMessages",
+                "embedLinks"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commands": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "allowedUserIDs": {
+                "items": {
+                  "pattern": "^\\d{15,22}$",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "channelIDs": {
+                "items": {
+                  "pattern": "^\\d{15,22}$",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "ephemeral": {
+                "type": "boolean"
+              },
+              "executableReady": {
+                "type": "boolean"
+              },
+              "guildID": {
+                "pattern": "^\\d{15,22}$",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "registration": {
+                "enum": [
+                  "unknown",
+                  "matching",
+                  "missing",
+                  "different"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "guildID",
+              "name",
+              "executableReady",
+              "registration",
+              "allowedUserIDs",
+              "channelIDs",
+              "ephemeral"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "live": {
+          "type": "boolean"
+        },
+        "operations": {
+          "additionalProperties": false,
+          "properties": {
+            "embeds": {
+              "type": "boolean"
+            },
+            "sendMessages": {
+              "type": "boolean"
+            },
+            "slashHooks": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "sendMessages",
+            "embeds",
+            "slashHooks"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "live",
+        "operations",
+        "channel",
+        "commands",
+        "limitations"
+      ],
+      "type": "object"
+    },
+    "commands.sync.result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "dryRun": {
+          "type": "boolean"
+        },
+        "operation": {
+          "const": "commands.sync",
+          "type": "string"
+        },
+        "registrations": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "definition": {
+                "additionalProperties": false,
+                "properties": {
+                  "default_member_permissions": {
+                    "const": "0",
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "description": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "type": {
+                          "maximum": 9007199254740991,
+                          "minimum": -9007199254740991,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "description",
+                        "required",
+                        "type"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "type": {
+                    "const": 1,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "name",
+                  "description",
+                  "type",
+                  "default_member_permissions",
+                  "options"
+                ],
+                "type": "object"
+              },
+              "guildID": {
+                "pattern": "^\\d{15,22}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "guildID",
+              "definition"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "dryRun",
+        "commands",
+        "operation",
+        "registrations"
+      ],
+      "type": "object"
+    },
     "config.update.request": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -121,6 +351,102 @@
             }
           ]
         },
+        "slashCommands": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "allowedUserIDs": {
+                "items": {
+                  "pattern": "^\\d{15,22}$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "channelIDs": {
+                "items": {
+                  "pattern": "^\\d{15,22}$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "description": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "ephemeral": {
+                "default": true,
+                "type": "boolean"
+              },
+              "executable": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "guildID": {
+                "pattern": "^\\d{15,22}$",
+                "type": "string"
+              },
+              "name": {
+                "pattern": "^[a-z0-9_-]{1,32}$",
+                "type": "string"
+              },
+              "options": {
+                "default": [],
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "name": {
+                      "pattern": "^[a-z0-9_-]{1,32}$",
+                      "type": "string"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "enum": [
+                        "string",
+                        "integer",
+                        "number",
+                        "boolean",
+                        "user",
+                        "channel",
+                        "role"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "description",
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 25,
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "description",
+              "guildID",
+              "executable",
+              "allowedUserIDs",
+              "ephemeral",
+              "options"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
         "transcriptionHook": {
           "anyOf": [
             {
@@ -193,6 +519,102 @@
                   "type": "null"
                 }
               ]
+            },
+            "slashCommands": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "allowedUserIDs": {
+                    "items": {
+                      "pattern": "^\\d{15,22}$",
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "channelIDs": {
+                    "items": {
+                      "pattern": "^\\d{15,22}$",
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "description": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "ephemeral": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "executable": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "guildID": {
+                    "pattern": "^\\d{15,22}$",
+                    "type": "string"
+                  },
+                  "name": {
+                    "pattern": "^[a-z0-9_-]{1,32}$",
+                    "type": "string"
+                  },
+                  "options": {
+                    "default": [],
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "description": {
+                          "maxLength": 100,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "name": {
+                          "pattern": "^[a-z0-9_-]{1,32}$",
+                          "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "type": {
+                          "enum": [
+                            "string",
+                            "integer",
+                            "number",
+                            "boolean",
+                            "user",
+                            "channel",
+                            "role"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "description",
+                        "type"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 25,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "description",
+                  "guildID",
+                  "executable",
+                  "allowedUserIDs",
+                  "ephemeral",
+                  "options"
+                ],
+                "type": "object"
+              },
+              "maxItems": 100,
+              "type": "array"
             },
             "transcriptionHook": {
               "type": [
@@ -279,6 +701,102 @@
               "type": "null"
             }
           ]
+        },
+        "slashCommands": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "allowedUserIDs": {
+                "items": {
+                  "pattern": "^\\d{15,22}$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "channelIDs": {
+                "items": {
+                  "pattern": "^\\d{15,22}$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "description": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "ephemeral": {
+                "default": true,
+                "type": "boolean"
+              },
+              "executable": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "guildID": {
+                "pattern": "^\\d{15,22}$",
+                "type": "string"
+              },
+              "name": {
+                "pattern": "^[a-z0-9_-]{1,32}$",
+                "type": "string"
+              },
+              "options": {
+                "default": [],
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "name": {
+                      "pattern": "^[a-z0-9_-]{1,32}$",
+                      "type": "string"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "enum": [
+                        "string",
+                        "integer",
+                        "number",
+                        "boolean",
+                        "user",
+                        "channel",
+                        "role"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "description",
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 25,
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "description",
+              "guildID",
+              "executable",
+              "allowedUserIDs",
+              "ephemeral",
+              "options"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
         },
         "transcriptionHook": {
           "type": [
@@ -654,6 +1172,45 @@
               "mutation": {
                 "type": "boolean"
               },
+              "options": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "choices": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "defaultValue": {},
+                    "description": {
+                      "type": "string"
+                    },
+                    "flags": {
+                      "type": "string"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "flags",
+                    "description",
+                    "required",
+                    "defaultValue",
+                    "choices"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "requestSchema": {
                 "type": [
                   "string",
@@ -669,7 +1226,8 @@
               "description",
               "mutation",
               "requestSchema",
-              "resultSchema"
+              "resultSchema",
+              "options"
             ],
             "type": "object"
           },
@@ -759,6 +1317,102 @@
           "pattern": "^\\d{15,22}$",
           "type": "string"
         },
+        "slashCommands": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "allowedUserIDs": {
+                "items": {
+                  "pattern": "^\\d{15,22}$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "channelIDs": {
+                "items": {
+                  "pattern": "^\\d{15,22}$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "description": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "ephemeral": {
+                "default": true,
+                "type": "boolean"
+              },
+              "executable": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "guildID": {
+                "pattern": "^\\d{15,22}$",
+                "type": "string"
+              },
+              "name": {
+                "pattern": "^[a-z0-9_-]{1,32}$",
+                "type": "string"
+              },
+              "options": {
+                "default": [],
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "name": {
+                      "pattern": "^[a-z0-9_-]{1,32}$",
+                      "type": "string"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "enum": [
+                        "string",
+                        "integer",
+                        "number",
+                        "boolean",
+                        "user",
+                        "channel",
+                        "role"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "description",
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 25,
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "description",
+              "guildID",
+              "executable",
+              "allowedUserIDs",
+              "ephemeral",
+              "options"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
         "transcriptionHook": {
           "minLength": 1,
           "type": "string"
@@ -815,6 +1469,102 @@
               "type": "null"
             }
           ]
+        },
+        "slashCommands": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "allowedUserIDs": {
+                "items": {
+                  "pattern": "^\\d{15,22}$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "channelIDs": {
+                "items": {
+                  "pattern": "^\\d{15,22}$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "description": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "ephemeral": {
+                "default": true,
+                "type": "boolean"
+              },
+              "executable": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "guildID": {
+                "pattern": "^\\d{15,22}$",
+                "type": "string"
+              },
+              "name": {
+                "pattern": "^[a-z0-9_-]{1,32}$",
+                "type": "string"
+              },
+              "options": {
+                "default": [],
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "name": {
+                      "pattern": "^[a-z0-9_-]{1,32}$",
+                      "type": "string"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "enum": [
+                        "string",
+                        "integer",
+                        "number",
+                        "boolean",
+                        "user",
+                        "channel",
+                        "role"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "description",
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 25,
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "description",
+              "guildID",
+              "executable",
+              "allowedUserIDs",
+              "ephemeral",
+              "options"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
         },
         "voiceChannelIDs": {
           "items": {
@@ -1140,6 +1890,346 @@
       "required": [
         "items",
         "nextCursor"
+      ],
+      "type": "object"
+    },
+    "messages.send.request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "channelID": {
+          "pattern": "^\\d{15,22}$",
+          "type": "string"
+        },
+        "message": {
+          "additionalProperties": false,
+          "properties": {
+            "content": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "embeds": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "author": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "icon_url": {
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      "name": {
+                        "maxLength": 256,
+                        "type": "string"
+                      },
+                      "url": {
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "color": {
+                    "maximum": 16777215,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "description": {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  "fields": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "inline": {
+                          "type": "boolean"
+                        },
+                        "name": {
+                          "maxLength": 256,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "value": {
+                          "maxLength": 1024,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "value"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 25,
+                    "type": "array"
+                  },
+                  "footer": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "icon_url": {
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      "text": {
+                        "maxLength": 2048,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  "image": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "url": {
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ],
+                    "type": "object"
+                  },
+                  "thumbnail": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "url": {
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ],
+                    "type": "object"
+                  },
+                  "timestamp": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                    "type": "string"
+                  },
+                  "title": {
+                    "maxLength": 256,
+                    "type": "string"
+                  },
+                  "url": {
+                    "format": "uri",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "maxItems": 10,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "channelID",
+        "message"
+      ],
+      "type": "object"
+    },
+    "messages.send.result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "channelID": {
+          "pattern": "^\\d{15,22}$",
+          "type": "string"
+        },
+        "dryRun": {
+          "type": "boolean"
+        },
+        "messageID": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{15,22}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operation": {
+          "const": "messages.send",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "allowed_mentions": {
+              "additionalProperties": false,
+              "properties": {
+                "parse": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 0,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "parse"
+              ],
+              "type": "object"
+            },
+            "content": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "embeds": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "author": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "icon_url": {
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      "name": {
+                        "maxLength": 256,
+                        "type": "string"
+                      },
+                      "url": {
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "color": {
+                    "maximum": 16777215,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "description": {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  "fields": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "inline": {
+                          "type": "boolean"
+                        },
+                        "name": {
+                          "maxLength": 256,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "value": {
+                          "maxLength": 1024,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "value"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 25,
+                    "type": "array"
+                  },
+                  "footer": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "icon_url": {
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      "text": {
+                        "maxLength": 2048,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  "image": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "url": {
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ],
+                    "type": "object"
+                  },
+                  "thumbnail": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "url": {
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ],
+                    "type": "object"
+                  },
+                  "timestamp": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                    "type": "string"
+                  },
+                  "title": {
+                    "maxLength": 256,
+                    "type": "string"
+                  },
+                  "url": {
+                    "format": "uri",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "maxItems": 10,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "allowed_mentions"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "dryRun",
+        "channelID",
+        "messageID",
+        "operation",
+        "payload"
       ],
       "type": "object"
     },
@@ -1626,6 +2716,239 @@
     },
     "result.any": {
       "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "slash.commands": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "allowedUserIDs": {
+            "items": {
+              "pattern": "^\\d{15,22}$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "channelIDs": {
+            "items": {
+              "pattern": "^\\d{15,22}$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "description": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ephemeral": {
+            "default": true,
+            "type": "boolean"
+          },
+          "executable": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "guildID": {
+            "pattern": "^\\d{15,22}$",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z0-9_-]{1,32}$",
+            "type": "string"
+          },
+          "options": {
+            "default": [],
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "pattern": "^[a-z0-9_-]{1,32}$",
+                  "type": "string"
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "type": {
+                  "enum": [
+                    "string",
+                    "integer",
+                    "number",
+                    "boolean",
+                    "user",
+                    "channel",
+                    "role"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "description",
+                "type"
+              ],
+              "type": "object"
+            },
+            "maxItems": 25,
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "guildID",
+          "executable",
+          "allowedUserIDs",
+          "ephemeral",
+          "options"
+        ],
+        "type": "object"
+      },
+      "maxItems": 100,
+      "type": "array"
+    },
+    "slash.response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "embeds": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "author": {
+                "additionalProperties": false,
+                "properties": {
+                  "icon_url": {
+                    "format": "uri",
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 256,
+                    "type": "string"
+                  },
+                  "url": {
+                    "format": "uri",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              },
+              "color": {
+                "maximum": 16777215,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "description": {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              "fields": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "inline": {
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "value": {
+                      "maxLength": 1024,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 25,
+                "type": "array"
+              },
+              "footer": {
+                "additionalProperties": false,
+                "properties": {
+                  "icon_url": {
+                    "format": "uri",
+                    "type": "string"
+                  },
+                  "text": {
+                    "maxLength": 2048,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "type": "object"
+              },
+              "image": {
+                "additionalProperties": false,
+                "properties": {
+                  "url": {
+                    "format": "uri",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "url"
+                ],
+                "type": "object"
+              },
+              "thumbnail": {
+                "additionalProperties": false,
+                "properties": {
+                  "url": {
+                    "format": "uri",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "url"
+                ],
+                "type": "object"
+              },
+              "timestamp": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                "type": "string"
+              },
+              "title": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "url": {
+                "format": "uri",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "maxItems": 10,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "type": "object"
     },
     "startup.install.result": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2594,7 +3917,7 @@
           "type": "number"
         },
         "schemaVersion": {
-          "const": 6,
+          "const": 8,
           "type": "number"
         },
         "version": {
