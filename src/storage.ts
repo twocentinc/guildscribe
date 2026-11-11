@@ -33,9 +33,9 @@ export const databaseCall = (
 ): Promise<unknown[]> => {
   if (!worker) {
     worker = new Worker(new URL("./databaseWorker.js", import.meta.url), {
-      execArgv: process.execArgv.filter(
-        (arg) => !arg.startsWith("--input-type"),
-      ),
+      // This worker runs compiled JavaScript and needs no parent CLI flags.
+      // Explicitly inherited V8/process-only flags can make Worker reject startup.
+      execArgv: [],
     });
     const activeWorker = worker;
     worker.on(

@@ -384,3 +384,34 @@ test("simultaneous Discord Opus streams produce separate PCM and a final MP3", a
     await rm(home, { recursive: true, force: true });
   }
 });
+
+test("synchronous disconnect during rejoin cannot re-enter recovery", async () => {
+  const { home, paths } = await prepareHome();
+  const channel = fakeChannel(CHANNEL_A);
+  channel.members.set(USER_A, humanMember(USER_A));
+  const { connections, recorder } = createHarness({
+    channels: new Map([[CHANNEL_A, channel]]), paths, graceClock: new ManualGraceClock(),
+  });
+  try {
+    await recorder.initialize();
+    const connection = connections[0];
+    let calls = 0;
+    connection.rejoin = () => {
+      calls++;
+      if (calls > 1) throw new Error("reentrant recovery");
+      const previous = connection.state;
+      connection.state = { status: VoiceConnectionStatus.Disconnected };
+      connection.emit("stateChange", previous, connection.state);
+      connection.state = { status: VoiceConnectionStatus.Ready };
+      return true;
+    };
+    const previous = connection.state;
+    connection.state = { status: VoiceConnectionStatus.Disconnected };
+    connection.emit("stateChange", previous, connection.state);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls, 1);
+  } finally {
+    await recorder.shutdown();
+    await rm(home, { recursive: true, force: true });
+  }
+});
