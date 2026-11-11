@@ -1462,7 +1462,8 @@ export class GuildscribeRecorder {
 
   private beginRecovery(connection: VoiceConnection): void {
     if (this.recovery || this.shuttingDown) return;
-    this.recovery = (async () => {
+    // Install the guard before rejoin can synchronously emit Disconnected.
+    this.recovery = Promise.resolve().then(async () => {
       for (let attempt = 0; attempt < 8; attempt += 1) {
         if (
           this.shuttingDown ||
@@ -1496,7 +1497,7 @@ export class GuildscribeRecorder {
       else if (connection.state.status !== VoiceConnectionStatus.Destroyed)
         connection.destroy();
       await this.enqueue(() => this.reconcile());
-    })().finally(() => {
+    }).finally(() => {
       this.recovery = null;
     });
   }
