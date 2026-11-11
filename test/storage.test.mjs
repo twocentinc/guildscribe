@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import {
   mkdtemp,
   readFile,
@@ -320,4 +322,21 @@ test("message configuration round-trips and invalid channel lists are rejected",
   } finally {
     await rm(home, { recursive: true, force: true });
   }
+});
+
+
+test("database worker ignores parent process-only Node flags", async () => {
+  const home = await temp();
+  try {
+    const moduleURL = new URL("../dist/storage.js", import.meta.url).href;
+    const script = `
+      const { databaseCall } = await import(${JSON.stringify(moduleURL)});
+      const result = await databaseCall(process.argv[1], [{ sql: "SELECT 1 AS ok", mode: "all" }], true);
+      console.log(JSON.stringify(result));
+    `;
+    const { stdout } = await promisify(execFile)(process.execPath, [
+      "--stack-trace-limit=10", "--input-type=module", "-e", script, databasePathFor(home),
+    ]);
+    assert.deepEqual(JSON.parse(stdout), [[{ ok: 1 }]]);
+  } finally { await rm(home, { recursive: true, force: true }); }
 });
