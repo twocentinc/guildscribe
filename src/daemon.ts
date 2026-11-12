@@ -84,13 +84,15 @@ export const runDaemon = async (
   const daemonStartedAt = new Date();
   const releaseLock = await acquireLock(paths, daemonStartedAt);
   const client = new Client({
-    intents: discordIntents(config.messageChannelIDs),
+    intents: discordIntents(config.messageChannelIDs, config.captureAllMessageChannels),
     partials: [Partials.Message],
   });
   installSlashCommands(client, paths, config);
   const messages = new MessageLogger(
     paths.home,
     config.messageChannelIDs ?? [],
+    config.captureAllMessageChannels ?? false,
+    config.excludedMessageChannelIDs ?? [],
   );
   client.on(Events.MessageCreate, (message) => messages.capture(message));
   client.on(Events.MessageUpdate, (_old, message) => messages.capture(message));

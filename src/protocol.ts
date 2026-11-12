@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1;
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 10;
 
 export const EXIT_CODES = {
   success: 0,
@@ -208,6 +208,8 @@ export const initRequestSchema = z
     ownerUserID: discordIDSchema.optional(),
     voiceChannelIDs: voiceChannelIDsSchema,
     messageChannelIDs: messageChannelIDsSchema.optional(),
+    captureAllMessageChannels: z.boolean().optional(),
+    excludedMessageChannelIDs: messageChannelIDsSchema.optional(),
     slashCommands: slashCommandsSchema.optional(),
     emptyGraceMs: z.number().int().min(0).max(3_600_000).optional(),
     hookTimeoutMs: z.number().int().min(1).max(3_600_000).optional(),
@@ -235,6 +237,8 @@ export const configUpdateRequestSchema = z
     ownerUserID: discordIDSchema.nullable().optional(),
     voiceChannelIDs: voiceChannelIDsSchema.optional(),
     messageChannelIDs: messageChannelIDsSchema.optional(),
+    captureAllMessageChannels: z.boolean().optional(),
+    excludedMessageChannelIDs: messageChannelIDsSchema.optional(),
     slashCommands: slashCommandsSchema.optional(),
     emptyGraceMs: z.number().int().min(0).max(3_600_000).optional(),
     hookTimeoutMs: z.number().int().min(1).max(3_600_000).optional(),
@@ -303,6 +307,8 @@ const configurationSchema = z.object({
   discordToken: z.literal("[redacted]"),
   ownerUserID: discordIDSchema.nullable(),
   messageChannelIDs: z.array(discordIDSchema),
+  captureAllMessageChannels: z.boolean(),
+  excludedMessageChannelIDs: z.array(discordIDSchema),
   slashCommands: slashCommandsSchema.optional(),
   voiceChannelIDs: z.array(discordIDSchema),
   emptyGraceMs: z.number().int(),
@@ -450,6 +456,8 @@ const initResultSchema = z.object({
   discordToken: z.literal("[redacted]"),
   ownerUserID: discordIDSchema.nullable(),
   messageChannelIDs: z.array(discordIDSchema),
+  captureAllMessageChannels: z.boolean(),
+  excludedMessageChannelIDs: z.array(discordIDSchema),
   slashCommands: slashCommandsSchema.optional(),
   voiceChannelIDs: z.array(discordIDSchema),
 });
@@ -489,6 +497,7 @@ export const messageResultSchema = z.object({
   authorID: discordIDSchema,
   authorUsername: z.string(),
   authorDisplayName: z.string().nullable(),
+  authorAvatarURL: z.string().nullable(),
   authorIsBot: z.boolean(),
   webhookID: discordIDSchema.nullable(),
   messageType: z.number().int(),

@@ -88,7 +88,7 @@ parentPort?.on(
       });
       db.pragma("foreign_keys = ON");
       const version = db.pragma("user_version", { simple: true });
-      if (typeof version !== "number" || version > 1)
+      if (typeof version !== "number" || version > 2)
         throw new Error("Unsupported newer Guildscribe database schema");
       if (version === 0) {
         if (!request.write)
@@ -116,6 +116,12 @@ CREATE TRIGGER ${table}_update AFTER UPDATE OF ${column} ON ${source} BEGIN
  INSERT INTO ${table}(rowid, ${column}) VALUES(new.${rowID}, new.${column}); END;`);
           }
           db!.pragma("user_version = 1");
+        })();
+      }
+      if (version < 2 && request.write) {
+        db.transaction(() => {
+          db!.exec("ALTER TABLE messages ADD COLUMN author_avatar_url TEXT");
+          db!.pragma("user_version = 2");
         })();
       }
       const execute = () =>

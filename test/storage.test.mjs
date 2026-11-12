@@ -1,3 +1,5 @@
+import Database from "better-sqlite3";
+import { chmodSync } from "node:fs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -47,6 +49,7 @@ const message = (overrides = {}) => ({
     username: "speaker",
     bot: false,
     globalName: "Speaker",
+    displayAvatarURL: () => "https://cdn.discordapp.com/avatars/333333333333333333/photo.png",
   },
   member: null,
   webhookId: null,
@@ -75,6 +78,7 @@ test("messages capture scope, edits, FTS, stale revisions, partial fetches and s
     const [[initial]] = await databaseCall(db, [
       { sql: "SELECT * FROM messages", mode: "all" },
     ]);
+    assert.equal(initial.author_avatar_url, "https://cdn.discordapp.com/avatars/333333333333333333/photo.png");
     logger.capture(message({ content: "new schedule", editedTimestamp: 2000 }));
     logger.capture(message({ content: "stale budget", editedTimestamp: 1500 }));
     logger.capture(
@@ -339,4 +343,65 @@ test("database worker ignores parent process-only Node flags", async () => {
     ]);
     assert.deepEqual(JSON.parse(stdout), [[{ ok: 1 }]]);
   } finally { await rm(home, { recursive: true, force: true }); }
+});
+
+
+test("all-channel capture excludes IDs, categories, descendants and DMs", async () => {
+  const home = await temp();
+  const blocked = "666666666666666666", category = "777777777777777777";
+  try {
+    assert.ok(discordIntents([], true).includes(GatewayIntentBits.MessageContent));
+    const logger = new MessageLogger(home, [], true, [blocked, category]);
+    logger.capture(message());
+    logger.capture(message({id: "444444444444444445", channelId: "555555555555555555"}));
+    logger.capture(message({id: "444444444444444446", channelId: blocked}));
+    logger.capture(message({id: "444444444444444447", guildId: null}));
+    logger.capture(message({id: "444444444444444448", channel: {isThread: () => false, parentId: category}}));
+    logger.capture(message({id: "444444444444444449", channel: {isThread: () => true, parentId: blocked, parent: {parentId: null}}}));
+    logger.capture(message({id: "444444444444444450", channel: {isThread: () => true, parentId: channelID, parent: {parentId: category}}}));
+    logger.capture(message({id: "444444444444444451", channel: {isThread: () => true, parentId: channelID, parent: null}}));
+    logger.capture(message({id: "444444444444444452", channel: {isThread: () => true, parentId: channelID, parent: {parentId: null}, name: "allowed thread"}}));
+    await logger.shutdown();
+    const [rows] = await databaseCall(databasePathFor(home), [{sql: "SELECT message_id FROM messages ORDER BY message_id", mode: "all"}]);
+    assert.deepEqual(rows.map(row => row.message_id), ["444444444444444444", "444444444444444445", "444444444444444452"]);
+    const allowlist = new MessageLogger(home, [blocked], false, [blocked]);
+    allowlist.capture(message({id: "444444444444444453", channelId: blocked}));
+    await allowlist.shutdown();
+    const [[count]] = await databaseCall(databasePathFor(home), [{sql: "SELECT count(*) AS n FROM messages", mode: "all"}]);
+    assert.equal(count.n, 3);
+  } finally { await rm(home, {recursive: true, force: true}); }
+});
+
+test("all-channel configuration persists exclusions and defaults safely", async () => {
+  const {initializeHome, loadConfig, updateConfiguration} = await import("../dist/config.js");
+  const home = await temp();
+  try {
+    const paths = getPaths(home);
+    await initializeHome(paths, {discordToken: "test", voiceChannelIDs: [channelID]}, false);
+    assert.equal((await loadConfig(paths)).captureAllMessageChannels, false);
+    await updateConfiguration(paths, {captureAllMessageChannels: true, excludedMessageChannelIDs: [channelID]}, false);
+    await updateConfiguration(paths, {emptyGraceMs: 4000}, false);
+    const config = await loadConfig(paths);
+    assert.equal(config.captureAllMessageChannels, true);
+    assert.deepEqual(config.excludedMessageChannelIDs, [channelID]);
+    await updateConfiguration(paths, {captureAllMessageChannels: false, excludedMessageChannelIDs: []}, false);
+    assert.equal((await loadConfig(paths)).captureAllMessageChannels, false);
+    assert.deepEqual((await loadConfig(paths)).excludedMessageChannelIDs, []);
+  } finally {await rm(home, {recursive: true, force: true});}
+});
+
+test("schema 1 message databases migrate without losing captured content", async () => {
+  const home = await temp();
+  try {
+    const file = databasePathFor(home);
+    const old = JSON.parse(await readFile(new URL("./snapshots/versions/sqlite-v1.json", import.meta.url), "utf8"));
+    const db = new Database(file);
+    chmodSync(file, 0o600);
+    db.exec(old.objects.find(o => o.name === "messages").sql);
+    db.exec("PRAGMA user_version=1");
+    db.prepare("INSERT INTO messages (message_id,guild_id,channel_id,author_id,author_username,author_is_bot,message_type,content,created_at,observed_at) VALUES (?,?,?,?,?,0,0,?,1000,1000)").run("444444444444444444",guildID,channelID,userID,"speaker","preserved");
+    db.close();
+    const [[row], version] = await databaseCall(file, [{sql:"SELECT content,author_avatar_url FROM messages",mode:"all"},{sql:"PRAGMA user_version",mode:"get"}],true);
+    assert.equal(row.content,"preserved"); assert.equal(row.author_avatar_url,null); assert.equal(version.user_version,2);
+  } finally { await rm(home,{recursive:true,force:true}); }
 });

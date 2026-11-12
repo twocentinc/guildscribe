@@ -1,6 +1,6 @@
 {
   "protocolVersion": 1,
-  "schemaVersion": 8,
+  "schemaVersion": 10,
   "schemas": {
     "capabilities.result": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -236,6 +236,9 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "captureAllMessageChannels": {
+          "type": "boolean"
+        },
         "discordToken": {
           "minLength": 1,
           "type": "string"
@@ -244,6 +247,13 @@
           "maximum": 3600000,
           "minimum": 0,
           "type": "integer"
+        },
+        "excludedMessageChannelIDs": {
+          "items": {
+            "pattern": "^\\d{15,22}$",
+            "type": "string"
+          },
+          "type": "array"
         },
         "hooks": {
           "additionalProperties": false,
@@ -479,6 +489,9 @@
         "configuration": {
           "additionalProperties": false,
           "properties": {
+            "captureAllMessageChannels": {
+              "type": "boolean"
+            },
             "discordToken": {
               "const": "[redacted]",
               "type": "string"
@@ -487,6 +500,13 @@
               "maximum": 9007199254740991,
               "minimum": -9007199254740991,
               "type": "integer"
+            },
+            "excludedMessageChannelIDs": {
+              "items": {
+                "pattern": "^\\d{15,22}$",
+                "type": "string"
+              },
+              "type": "array"
             },
             "hooks": {
               "additionalProperties": {
@@ -634,6 +654,8 @@
             "discordToken",
             "ownerUserID",
             "messageChannelIDs",
+            "captureAllMessageChannels",
+            "excludedMessageChannelIDs",
             "voiceChannelIDs",
             "emptyGraceMs",
             "hookTimeoutMs",
@@ -661,6 +683,9 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "captureAllMessageChannels": {
+          "type": "boolean"
+        },
         "discordToken": {
           "const": "[redacted]",
           "type": "string"
@@ -669,6 +694,13 @@
           "maximum": 9007199254740991,
           "minimum": -9007199254740991,
           "type": "integer"
+        },
+        "excludedMessageChannelIDs": {
+          "items": {
+            "pattern": "^\\d{15,22}$",
+            "type": "string"
+          },
+          "type": "array"
         },
         "hooks": {
           "additionalProperties": {
@@ -816,6 +848,8 @@
         "discordToken",
         "ownerUserID",
         "messageChannelIDs",
+        "captureAllMessageChannels",
+        "excludedMessageChannelIDs",
         "voiceChannelIDs",
         "emptyGraceMs",
         "hookTimeoutMs",
@@ -1258,6 +1292,9 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "captureAllMessageChannels": {
+          "type": "boolean"
+        },
         "discordToken": {
           "minLength": 1,
           "type": "string"
@@ -1266,6 +1303,13 @@
           "maximum": 3600000,
           "minimum": 0,
           "type": "integer"
+        },
+        "excludedMessageChannelIDs": {
+          "items": {
+            "pattern": "^\\d{15,22}$",
+            "type": "string"
+          },
+          "type": "array"
         },
         "hooks": {
           "additionalProperties": false,
@@ -1436,6 +1480,9 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "captureAllMessageChannels": {
+          "type": "boolean"
+        },
         "configurationPath": {
           "type": "string"
         },
@@ -1448,6 +1495,13 @@
         },
         "dryRun": {
           "type": "boolean"
+        },
+        "excludedMessageChannelIDs": {
+          "items": {
+            "pattern": "^\\d{15,22}$",
+            "type": "string"
+          },
+          "type": "array"
         },
         "home": {
           "type": "string"
@@ -1582,6 +1636,8 @@
         "discordToken",
         "ownerUserID",
         "messageChannelIDs",
+        "captureAllMessageChannels",
+        "excludedMessageChannelIDs",
         "voiceChannelIDs"
       ],
       "type": "object"
@@ -1599,6 +1655,12 @@
             "type": "object"
           },
           "type": "array"
+        },
+        "authorAvatarURL": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "authorDisplayName": {
           "type": [
@@ -1717,6 +1779,7 @@
         "authorID",
         "authorUsername",
         "authorDisplayName",
+        "authorAvatarURL",
         "authorIsBot",
         "webhookID",
         "messageType",
@@ -1747,6 +1810,12 @@
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "authorAvatarURL": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "authorDisplayName": {
                 "type": [
@@ -1865,6 +1934,7 @@
               "authorID",
               "authorUsername",
               "authorDisplayName",
+              "authorAvatarURL",
               "authorIsBot",
               "webhookID",
               "messageType",
@@ -3917,7 +3987,7 @@
           "type": "number"
         },
         "schemaVersion": {
-          "const": 8,
+          "const": 10,
           "type": "number"
         },
         "version": {

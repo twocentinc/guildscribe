@@ -56,6 +56,8 @@ export interface GuildscribeConfig {
   ownerUserID: string | undefined;
   voiceChannelIDs: string[];
   messageChannelIDs: string[];
+  captureAllMessageChannels?: boolean;
+  excludedMessageChannelIDs?: string[];
   slashCommands?: z.infer<typeof slashCommandsSchema>;
   emptyGraceMs: number;
   hookTimeoutMs: number;
@@ -68,6 +70,8 @@ const ENV_KEYS = {
   ownerUserID: "GUILDSCRIBE_OWNER_USER_ID",
   voiceChannelIDs: "GUILDSCRIBE_VOICE_CHANNEL_IDS",
   messageChannelIDs: "GUILDSCRIBE_MESSAGE_CHANNEL_IDS",
+  captureAllMessageChannels: "GUILDSCRIBE_CAPTURE_ALL_MESSAGE_CHANNELS",
+  excludedMessageChannelIDs: "GUILDSCRIBE_EXCLUDED_MESSAGE_CHANNEL_IDS",
   slashCommands: "GUILDSCRIBE_SLASH_COMMANDS",
   legacyVoiceChannelID: "GUILDSCRIBE_VOICE_CHANNEL_ID",
   emptyGraceMs: "GUILDSCRIBE_EMPTY_GRACE_MS",
@@ -174,6 +178,8 @@ const renderEnv = (request: InitRequest): string => {
     `${ENV_KEYS.discordToken}=${encodeValue(request.discordToken)}`,
     `${ENV_KEYS.voiceChannelIDs}=${encodeValue(JSON.stringify(request.voiceChannelIDs))}`,
     `${ENV_KEYS.messageChannelIDs}=${encodeValue(JSON.stringify(request.messageChannelIDs ?? []))}`,
+    `${ENV_KEYS.captureAllMessageChannels}=${encodeValue(String(request.captureAllMessageChannels ?? false))}`,
+    `${ENV_KEYS.excludedMessageChannelIDs}=${encodeValue(JSON.stringify(request.excludedMessageChannelIDs ?? []))}`,
     `${ENV_KEYS.emptyGraceMs}=${encodeValue(request.emptyGraceMs ?? 30_000)}`,
     `${ENV_KEYS.hookTimeoutMs}=${encodeValue(request.hookTimeoutMs ?? 30_000)}`,
   ];
@@ -233,6 +239,8 @@ export const redactedConfiguration = (config: GuildscribeConfig) => ({
   slashCommands: config.slashCommands ?? [],
   voiceChannelIDs: config.voiceChannelIDs,
   messageChannelIDs: config.messageChannelIDs ?? [],
+  captureAllMessageChannels: config.captureAllMessageChannels ?? false,
+  excludedMessageChannelIDs: config.excludedMessageChannelIDs ?? [],
   emptyGraceMs: config.emptyGraceMs,
   hookTimeoutMs: config.hookTimeoutMs,
   transcriptionHook: config.transcriptionHook ?? null,
@@ -270,6 +278,8 @@ const mergedConfiguration = (
     voiceChannelIDs: update.voiceChannelIDs ?? config.voiceChannelIDs,
     messageChannelIDs:
       update.messageChannelIDs ?? config.messageChannelIDs ?? [],
+    captureAllMessageChannels: update.captureAllMessageChannels ?? config.captureAllMessageChannels ?? false,
+    excludedMessageChannelIDs: update.excludedMessageChannelIDs ?? config.excludedMessageChannelIDs ?? [],
     emptyGraceMs: update.emptyGraceMs ?? config.emptyGraceMs,
     hookTimeoutMs: update.hookTimeoutMs ?? config.hookTimeoutMs,
     ...(transcriptionHook ? { transcriptionHook } : {}),
@@ -296,6 +306,8 @@ export const updateConfiguration = async (
     slashCommands: merged.slashCommands ?? [],
     voiceChannelIDs: merged.voiceChannelIDs,
     messageChannelIDs: merged.messageChannelIDs ?? [],
+    captureAllMessageChannels: merged.captureAllMessageChannels ?? false,
+    excludedMessageChannelIDs: merged.excludedMessageChannelIDs ?? [],
     emptyGraceMs: merged.emptyGraceMs ?? 30_000,
     hookTimeoutMs: merged.hookTimeoutMs ?? 30_000,
     transcriptionHook: merged.transcriptionHook,
@@ -518,14 +530,18 @@ export const loadConfig = async (
     );
   }
   let messageChannelIDs: string[];
+  let excludedMessageChannelIDs: string[];
+  const captureAll = values[ENV_KEYS.captureAllMessageChannels] || "false";
+  if (!["true", "false"].includes(captureAll)) throw new GuildscribeError("invalid_configuration", "Invalid GUILDSCRIBE_CAPTURE_ALL_MESSAGE_CHANNELS");
   try {
+    excludedMessageChannelIDs = messageChannelIDsSchema.parse(JSON.parse(values[ENV_KEYS.excludedMessageChannelIDs] || "[]"));
     messageChannelIDs = messageChannelIDsSchema.parse(
       JSON.parse(values[ENV_KEYS.messageChannelIDs] || "[]"),
     );
   } catch (error) {
     throw new GuildscribeError(
       "invalid_configuration",
-      "Invalid GUILDSCRIBE_MESSAGE_CHANNEL_IDS",
+      "Invalid message channel ID list",
       { cause: error },
     );
   }
@@ -551,6 +567,8 @@ export const loadConfig = async (
     ),
     voiceChannelIDs: channelResult.data,
     messageChannelIDs,
+    captureAllMessageChannels: captureAll === "true",
+    excludedMessageChannelIDs,
     emptyGraceMs: integerSetting(values, ENV_KEYS.emptyGraceMs, 30_000, 0),
     hookTimeoutMs: integerSetting(values, ENV_KEYS.hookTimeoutMs, 30_000, 1),
     transcriptionHook: optionalHook(values, ENV_KEYS.transcriptionHook),
