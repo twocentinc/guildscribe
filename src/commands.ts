@@ -308,6 +308,8 @@ export const createProgram = (): Command => {
             discordToken: "[redacted]",
             ownerUserID: request.ownerUserID ?? null,
             messageChannelIDs: request.messageChannelIDs ?? [],
+            captureAllMessageChannels: request.captureAllMessageChannels ?? false,
+            excludedMessageChannelIDs: request.excludedMessageChannelIDs ?? [],
             voiceChannelIDs: request.voiceChannelIDs,
           },
         };

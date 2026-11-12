@@ -90,7 +90,7 @@ const checkDiscord = async (
   timeoutMs: number,
 ): Promise<void> => {
   const client = new Client({
-    intents: discordIntents(config.messageChannelIDs),
+    intents: discordIntents(config.messageChannelIDs, config.captureAllMessageChannels),
   });
   const ready = new Promise<void>((resolve, reject) => {
     if (client.isReady()) {

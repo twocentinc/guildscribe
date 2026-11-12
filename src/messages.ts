@@ -8,10 +8,10 @@ import { databaseCall, databasePathFor, upsert } from "./storage.js";
 import { diagnostic } from "./protocol.js";
 
 const snowflake = z.string().regex(/^\d{15,22}$/);
-export const discordIntents = (messageChannelIDs: string[] = []) => [
+export const discordIntents = (messageChannelIDs: string[] = [], captureAll = false) => [
   GatewayIntentBits.Guilds,
   GatewayIntentBits.GuildVoiceStates,
-  ...(messageChannelIDs.length
+  ...(captureAll || messageChannelIDs.length
     ? [GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
     : []),
 ];
@@ -25,6 +25,7 @@ const snapshotSchema = z
     author_id: snowflake,
     author_username: z.string(),
     author_display_name: z.string().nullable(),
+    author_avatar_url: z.string().nullable(),
     author_is_bot: z.number().int().min(0).max(1),
     webhook_id: snowflake.nullable(),
     message_type: z.number().int(),
@@ -50,6 +51,7 @@ export const messageSnapshot = (message: Message) =>
     author_username: message.author.username,
     author_display_name:
       message.member?.displayName ?? message.author.globalName ?? null,
+    author_avatar_url: message.member?.displayAvatarURL?.({ extension: "png", size: 64 }) ?? message.author.displayAvatarURL?.({ extension: "png", size: 64 }) ?? null,
     author_is_bot: Number(message.author.bot),
     webhook_id: message.webhookId,
     message_type: message.type,
@@ -80,16 +82,24 @@ export class MessageLogger {
   constructor(
     private readonly home: string,
     private readonly channelIDs: string[],
+    private readonly captureAll = false,
+    private readonly excludedIDs: string[] = [],
   ) {}
   private allowed(message: Message | PartialMessage): boolean {
-    return (
-      message.guildId !== null &&
-      (this.channelIDs.includes(message.channelId) ||
-        (message.channel.isThread() &&
-          message.channel.parentId !== null &&
-          this.channelIDs.includes(message.channel.parentId)))
-    );
+    if (message.guildId === null) return false;
+    const channel = message.channel;
+    const parentID = "parentId" in channel ? channel.parentId : null;
+    const parent = channel.isThread() ? channel.parent : null;
+    // Without the parent we cannot safely evaluate category exclusions.
+    if (channel.isThread() && !parent && this.excludedIDs.length) return false;
+    const categoryID = parent && "parentId" in parent ? parent.parentId : null;
+    if ([message.channelId, parentID, categoryID].some(
+      (id) => id !== null && this.excludedIDs.includes(id),
+    )) return false;
+    return this.captureAll || this.channelIDs.includes(message.channelId) ||
+      (channel.isThread() && parentID !== null && this.channelIDs.includes(parentID));
   }
+
   capture(message: Message | PartialMessage): void {
     if (this.stopping || !this.allowed(message)) return;
     // Freeze complete gateway payloads before Discord's cache can mutate them.

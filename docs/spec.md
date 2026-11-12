@@ -311,7 +311,16 @@ daemon performs migration; building this repository does not alter a live home.
 
 `messageChannelIDs` in initialization/config updates maps to
 `GUILDSCRIBE_MESSAGE_CHANNEL_IDS` (a JSON array encoded like the voice allowlist).
-It defaults to `[]`. Capture includes those guild channels and accessible child
+It defaults to `[]`. `captureAllMessageChannels` maps to
+`GUILDSCRIBE_CAPTURE_ALL_MESSAGE_CHANNELS` (default `false`). When true, capture
+accepts all accessible guild channels, including newly created channels, without
+an allowlist refresh. `excludedMessageChannelIDs` maps to
+`GUILDSCRIBE_EXCLUDED_MESSAGE_CHANNEL_IDS` (default `[]`). Exclusions override
+both capture modes and match channel IDs, thread parent IDs, and category IDs,
+so excluded categories also cover new channels and their threads. DMs remain
+excluded. Existing configurations retain allowlist behavior.
+
+In allowlist mode, capture includes those guild channels and accessible child
 threads, independently of voice recording. Human, bot, and webhook messages are
 retained. No DMs, history backfill, deletion tracking, read/unread state, or
 attachment binary downloading is implemented.
@@ -1195,3 +1204,5 @@ Offline tests verify exact send and registration requests, partial sync failures
 rate-limit and permission failures, cancellation, permission overwrites, registration
 drift, dry-run isolation, and acknowledgement-before-hook-response ordering. No live
 mutations are part of verification.
+
+Message storage schema 2 adds nullable `author_avatar_url`. The database worker migrates schema 1 on its next write. Message snapshots capture the member profile photo (falling back to the user photo); older messages may have no photo. History output includes `authorAvatarURL`.

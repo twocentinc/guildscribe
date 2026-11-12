@@ -152,6 +152,7 @@ const message = (r: Row) =>
     authorID: r.author_id,
     authorUsername: r.author_username,
     authorDisplayName: r.author_display_name,
+    authorAvatarURL: r.author_avatar_url ?? null,
     authorIsBot: Boolean(r.author_is_bot),
     webhookID: r.webhook_id,
     messageType: r.message_type,
