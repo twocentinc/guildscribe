@@ -1,6 +1,6 @@
 {
   "name": "guildscribe",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "A self-hosted Discord voice meeting recorder",
   "type": "module",
   "bin": {

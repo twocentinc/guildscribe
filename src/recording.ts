@@ -1,6 +1,7 @@
 import { loadRecording, storeRecording } from "./storage.js";
 import {
   EndBehaviorType,
+  VoiceConnectionDisconnectReason,
   VoiceConnectionStatus,
   entersState,
   joinVoiceChannel,
@@ -1426,10 +1427,16 @@ export class GuildscribeRecorder {
         error: sanitizeError(error),
       });
     });
-    connection.on("stateChange", (_oldState, newState) => {
+    connection.on("stateChange", (oldState, newState) => {
       if (newState.status === VoiceConnectionStatus.Ready) {
         void this.closeConnectionGap(false);
       } else if (newState.status === VoiceConnectionStatus.Disconnected) {
+        diagnostic("warn", "discord.voiceDisconnected", {
+          channelID: channel.id,
+          previousStatus: oldState.status,
+          reason: VoiceConnectionDisconnectReason[newState.reason],
+          closeCode: "closeCode" in newState ? newState.closeCode : null,
+        });
         void this.openConnectionGap();
         this.beginRecovery(connection);
       }
