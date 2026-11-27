@@ -226,3 +226,30 @@ section so it can be copied without carrying Guildscribe behavior with it.
 - Repository documentation must be plain-text Markdown.
 - Do not add plans, architecture documents, or inventories that compete with
   `docs/spec.md`.
+
+## README and documentation writing
+
+- Use `$twocents-docs` for README and public documentation work when available.
+  If the skill is unavailable, follow these rules without requiring installation.
+- Keep `README.md` short: what the tool does, essential setup, useful caveats,
+  and links to https://oss.twocents.com/docs/guildscribe/.
+- Maintain detailed human guides in `twocentinc/oss` under
+  `docs/content/docs/guildscribe/`. Do not create a competing public docs tree.
+- Private OSS access is not required for README work. Use the published guides
+  and this repository's public interfaces when an OSS checkout is unavailable.
+- Write concise, direct maintainer prose about what readers can do. Use ordinary
+  verbs and cut filler, slogans, forced contrasts, and claims without evidence.
+- Do not join prose clauses with semicolons. Write one direct sentence, separate
+  distinct points, or remove a redundant clause. Preserve semicolons in code.
+- Explain user tasks and supported public behavior. Keep commit references,
+  source-file inventories, and implementation chronology out of reader guides.
+  Never present planned or unimplemented features as available.
+- Preserve needed configuration, user-supplied files, file formats, limits,
+  credential handling, backup guidance, and failure or recovery behavior.
+- Show complete JSON on stdin when the command supports it, preferably with a
+  quoted heredoc and `--request -`. Do not require a separate request JSON file.
+  Include complete contents for other required input files and label placeholders.
+- Check examples against supported commands and schemas. Never invent flags,
+  payload fields, or capabilities, and never run example mutations as verification.
+- Preserve executable code, command syntax, public contracts, and required fields
+  when editing prose. Keep repository paths portable and omit personal paths.
